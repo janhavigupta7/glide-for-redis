@@ -10,7 +10,7 @@ import aioredis
 import numpy as np
 import redis.asyncio as redispy
 import uvloop
-from pybushka import AsyncClient, ClientConfiguration, RedisAsyncClient
+from pybushka import AsyncClient, ClientConfiguration, RedisAsyncFFIClient
 
 arguments_parser = argparse.ArgumentParser()
 arguments_parser.add_argument(
@@ -181,7 +181,7 @@ async def main(event_loop_name, total_commands, num_of_concurrent_tasks, data_si
 
     # Babushka
     config = ClientConfiguration(host=HOST, port=PORT)
-    babushka_client = await RedisAsyncClient.create(config)
+    babushka_client = await RedisAsyncFFIClient.create(config)
     await run_client(
         babushka_client,
         "babushka",
