@@ -91,7 +91,7 @@ async function create_bench_tasks(
             redis_benchmark(client, client_name, total_commands, data)
         );
     }
-    await Promise.all(running_tasks);
+        await Promise.all(running_tasks);
     let toc = process.hrtime(tic);
     return toc[0] + toc[1] / 1000000000;
 }
@@ -166,16 +166,16 @@ async function main(
     babushka_socket_client.dispose();
     await new Promise((resolve) => setTimeout(resolve, 100));
 
-    const node_redis_client = createClient({ url: ADDRESS });
-    await node_redis_client.connect();
-    await run_client(
-        node_redis_client,
-        "node_redis",
-        total_commands,
-        num_of_concurrent_tasks,
-        data_size,
-        data
-    );
+    // const node_redis_client = createClient({ url: ADDRESS });
+    // await node_redis_client.connect();
+    // await run_client(
+    //     node_redis_client,
+    //     "node_redis",
+    //     total_commands,
+    //     num_of_concurrent_tasks,
+    //     data_size,
+    //     data
+    // );
 }
 
 const optionDefinitions = [{ name: "resultsFile", type: String }];
