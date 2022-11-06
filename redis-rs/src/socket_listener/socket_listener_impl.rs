@@ -467,16 +467,41 @@ where
                         close_socket();
                         return;
                     }
-                }
+                },
                 // `notify_one` was called to indicate no more clients are connected,
                 // close the socket
                 _ = notify_close.notified() => {close_socket(); return;},
                 // Interrupt was received, close the socket
-                _ = handle_signals() => {close_socket(); return;}
+                _ = handle_signals() => {close_socket(); return;},
             }
         }
         })
     .await;
+        //     loop {
+    //         // tokio::select! {
+    //             match listener.accept().await {
+    //                 Ok((stream, _addr)) => {
+    //                     // New client
+    //                     let cloned_close_notifier = notify_close.clone();
+    //                     let cloned_connected_clients = connected_clients.clone();
+    //                     cloned_connected_clients.fetch_add(1, Ordering::Relaxed);
+    //                     task::spawn_local(listen_on_client_stream(stream, cloned_close_notifier.clone(), cloned_connected_clients));
+    //                 },
+    //                 Err(err) => {
+    //                     init_callback(Err(err.into()));
+    //                     close_socket();
+    //                     return;
+    //                 }
+    //             };
+    //         //     // `notify_one` was called to indicate no more clients are connected,
+    //         //     // close the socket
+    //         //     _ = notify_close.notified() => {close_socket(); return;},
+    //         //     // Interrupt was received, close the socket
+    //         //     _ = handle_signals() => {close_socket(); return;}
+    //         // }
+    //     }
+    //     })
+    // .await;
 }
 
 #[derive(Debug)]
