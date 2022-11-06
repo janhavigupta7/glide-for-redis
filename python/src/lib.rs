@@ -1,6 +1,8 @@
 use pyo3::prelude::*;
-use pyo3::types::PyString;
+use pyo3::types::{IntoPyDict, PyString};
 use redis::aio::MultiplexedConnection;
+use redis::socket_listener::headers::{HEADER_END, RequestType, ResponseType};
+use redis::socket_listener::start_socket_listener;
 use redis::{AsyncCommands, RedisResult};
 
 #[pyclass]
@@ -100,5 +102,61 @@ impl AsyncPipeline {
 #[pymodule]
 fn pybushka(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<AsyncClient>()?;
+    m.add("HEADER_LENGTH_IN_BYTES", HEADER_END).unwrap();
+    m.add("REQ_ADDRESS", RequestType::ServerAddress as u8).unwrap();
+    m.add("REQ_GET", RequestType::GetString as u8).unwrap();
+    m.add("REQ_SET", RequestType::SetString as u8).unwrap();
+
+    #[pyfn(m)]
+    fn start_socket_listener_external(
+        init_callback: PyObject,
+    ) -> PyResult<PyObject> {
+        println!("Rust: strarting socket listener");
+        start_socket_listener(
+            move |socket_path| {
+                println!("Rust: entered callback!");
+                let gil = Python::acquire_gil();
+                let py = gil.python();
+                match socket_path {
+                    Ok(path) => {println!("got ok path: {}", path);let _ = init_callback.call(py, (), Some([("socket_path", path)].into_py_dict(py)));},
+                    Err(err) => {let _ =init_callback.call(py, (), Some([("err", err.to_string().into_py(py))].into_py_dict(py)));},
+                    };
+                });
+
+            
+            // move |result| match result {
+            //     ClosingReason::ReadSocketClosed => {
+            //         let gil = Python::acquire_gil();
+            //         let py = gil.python();
+            //         let _ = close_callback.call(
+            //             py,
+            //             (),
+            //             Some([("err", "ReadSocketClosed")].into_py_dict(py)),
+            //         );
+            //     }
+            //     ClosingReason::UnhandledError(err) => {
+            //         let gil = Python::acquire_gil();
+            //         let py = gil.python();
+            //         let _ = close_callback.call(
+            //             py,
+            //             (),
+            //             Some([("err", err.to_string())].into_py_dict(py)),
+            //         );
+            //     }
+            //     ClosingReason::FailedInitialization(err) => {
+            //         // TODO - Do we want to differentiate this from UnhandledError ?
+            //         let gil = Python::acquire_gil();
+            //         let py = gil.python();
+            //         let _ = close_callback.call(
+            //             py,
+            //             (),
+            //             Some([("err", err.to_string())].into_py_dict(py)),
+            //         );
+            //     }
+            // },
+        //);
+        Ok(Python::with_gil(|py| "OK".into_py(py)))
+    }
+
     Ok(())
 }

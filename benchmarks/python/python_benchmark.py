@@ -1,16 +1,17 @@
+import argparse
 import asyncio
 import functools
 import json
+import os
 import random
 import time
-import argparse
 from enum import Enum
+
 import aioredis
 import numpy as np
 import redis.asyncio as redispy
 import uvloop
-from statistics import mean
-from pybushka import AsyncClient, ClientConfiguration, RedisAsyncClient
+from pybushka import AsyncClient, ClientConfiguration, RedisAsyncFFIClient
 
 
 class ChosenAction(Enum):
@@ -48,6 +49,7 @@ arguments_parser.add_argument(
 )
 args = arguments_parser.parse_args()
 
+HOST = "localhost"
 PORT = 6379
 PROB_GET = 0.8
 PROB_GET_EXISTING_KEY = 0.8
@@ -55,6 +57,7 @@ SIZE_GET_KEYSPACE = 3750000  # 3.75 million
 SIZE_SET_KEYSPACE = 3000000  # 3 million
 counter = 0
 running_tasks = set()
+bench_str_results = []
 bench_json_results = []
 
 
@@ -83,8 +86,14 @@ def calculate_latency(latency_list, percentile):
 
 
 def process_results():
+    global bench_str_results
     global bench_json_results
     global args
+
+    # print results
+    bench_str_results.sort()
+    for res in bench_str_results:
+        print(res)
 
     # write json results to a file
     res_file_path = args.resultsFile
@@ -138,17 +147,6 @@ async def create_and_run_concurrent_tasks(
     await asyncio.gather(*(list(running_tasks)))
 
 
-def latency_results(prefix, latencies):
-    result = {}
-    result[prefix + "_p50_latency"] = calculate_latency(latencies, 50)
-    result[prefix + "_p90_latency"] = calculate_latency(latencies, 90)
-    result[prefix + "_p99_latency"] = calculate_latency(latencies, 9)
-    result[prefix + "_average_latency"] = mean(latencies)
-    result[prefix + "_std_dev"] = np.std(latencies)
-
-    return result
-
-
 async def run_client(
     client,
     client_name,
@@ -179,33 +177,46 @@ async def run_client(
     set_latencies = action_latencies[ChosenAction.SET]
     set_results = latency_results("set", set_latencies)
 
+    set_latency = action_latencies[ChosenAction.SET]
+    set_50 = calculate_latency(set_latency[client_name], 50)
+    set_90 = calculate_latency(set_latency[client_name], 90)
+    set_99 = calculate_latency(set_latency[client_name], 99)
+    set_std_dev = np.std(set_latency[client_name])
     json_res = {
-        **{
-            "client": client_name,
-            "loop": event_loop_name,
-            "num_of_tasks": num_of_concurrent_tasks,
-            "data_size": data_size,
-            "tps": tps,
-        },
-        **get_existing_latency_results,
-        **get_non_existing_latency_results,
-        **set_results,
+        "client": client_name,
+        "loop": event_loop_name,
+        "num_of_tasks": num_of_concurrent_tasks,
+        "data_size": data_size,
+        "tps": tps,
+        "get_non_existing_p50_latency": get_nonexisting_50,
+        "get_non_existing_p90_latency": get_nonexisting_90,
+        "get_non_existing_p99_latency": get_nonexisting_99,
+        "get_non_existing_std_dev": get_nonexisting_std_dev,
+        "get_existing_p50_latency": get_existing_50,
+        "get_existing_p90_latency": get_existing_90,
+        "get_existing_p99_latency": get_existing_99,
+        "get_existing_std_dev": get_existing_std_dev,
+        "set_p50_latency": set_50,
+        "set_p90_latency": set_90,
+        "set_p99_latency": set_99,
+        "set_std_dev": set_std_dev,
     }
 
     bench_json_results.append(json_res)
+    bench_str_results.append(
+        f"client: {client_name}, event_loop: {event_loop_name}, concurrent_tasks: {num_of_concurrent_tasks}, data_size: {data_size}, TPS: {tps}, "
+        f"get_non_existing_p50: {get_nonexisting_50}, get_non_existing_p90: {get_nonexisting_90}, get_non_existing_p99: {get_nonexisting_99}, get_non_existing_std_dev: {get_nonexisting_std_dev},"
+        f"get_existing_p50_: {get_existing_50}, get_existing_p90: {get_existing_90}, get_existing_p99: {get_existing_99}, get_existing_std_dev: {get_existing_std_dev}, "
+        f" set_p50: {set_50}, set_p90: {set_90}, set_p99: {set_99}, set_std_dev: {set_std_dev}"
+    )
 
 
 async def main(
-    event_loop_name,
-    total_commands,
-    num_of_concurrent_tasks,
-    data_size,
-    clients_to_run,
-    host,
+    event_loop_name, total_commands, num_of_concurrent_tasks, data_size, clients_to_run
 ):
     if clients_to_run == "all":
         # Redis-py
-        redispy_client = await redispy.Redis(host=host, port=PORT)
+        redispy_client = await redispy.Redis(host=HOST, port=PORT)
         await run_client(
             redispy_client,
             "redispy",
@@ -216,7 +227,7 @@ async def main(
         )
 
         # AIORedis
-        aioredis_client = await aioredis.from_url(f"redis://{host}:{PORT}")
+        aioredis_client = await aioredis.from_url(f"redis://{HOST}:{PORT}")
         await run_client(
             aioredis_client,
             "aioredis",
@@ -232,21 +243,11 @@ async def main(
         or clients_to_run == "babushka"
     ):
         # Babushka
-        config = ClientConfiguration(host=host, port=PORT)
-        babushka_client = await RedisAsyncClient.create(config)
+        config = ClientConfiguration(host=HOST, port=PORT)
+        babushka_client = await RedisAsyncFFIClient.create(config)
         await run_client(
             babushka_client,
-            "babushka",
-            event_loop_name,
-            total_commands,
-            num_of_concurrent_tasks,
-            data_size,
-        )
-
-        direct_babushka = await AsyncClient.create_client(f"redis://{host}:{PORT}")
-        await run_client(
-            direct_babushka,
-            "direct_babushka",
+            "babushka-FFI",
             event_loop_name,
             total_commands,
             num_of_concurrent_tasks,
@@ -262,7 +263,6 @@ if __name__ == "__main__":
     concurrent_tasks = args.concurrentTasks
     data_size = int(args.dataSize)
     clients_to_run = args.clients
-    host = args.host
 
     product_of_arguments = [
         (data_size, int(num_of_concurrent_tasks))
@@ -277,7 +277,6 @@ if __name__ == "__main__":
                 num_of_concurrent_tasks,
                 data_size,
                 clients_to_run,
-                host,
             )
         )
 
@@ -291,7 +290,6 @@ if __name__ == "__main__":
                 num_of_concurrent_tasks,
                 data_size,
                 clients_to_run,
-                host,
             )
         )
 
