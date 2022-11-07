@@ -42,6 +42,7 @@ function runPythonBenchmark(){
 }
 
 function runNodeBenchmark(){
+  yarn cache clean
   yarn install
   cd ${BENCH_FOLDER}/../node
   yarn install
