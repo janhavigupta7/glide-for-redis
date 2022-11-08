@@ -1,20 +1,20 @@
 from email.base64mime import header_length
+from enum import Enum
 import logging
 import socket
 import socketserver
 import sys
 import asyncio
 import async_timeout
-from typing import Optional
+from typing import Awaitable, Optional
 from pybushka.commands.core import CoreCommands
 from pybushka.config import ClientConfiguration
 from pybushka.utils import to_url
 
-from .pybushka import AsyncClient, start_socket_listener_external, REQ_GET, REQ_SET, REQ_ADDRESS, HEADER_LENGTH_IN_BYTES
+from .pybushka import AsyncClient, start_socket_listener_external, REQ_GET, REQ_SET, REQ_ADDRESS, RES_NULL, RES_STRING, HEADER_LENGTH_IN_BYTES
 
 LOGGER = logging.getLogger(__name__)
-
-
+    
 class RedisAsyncFFIClient(CoreCommands):
     @classmethod
     async def create(cls, config: ClientConfiguration = None):
@@ -49,40 +49,57 @@ class RedisAsyncFFIClient(CoreCommands):
         return self.connection.create_pipeline()
 
 
-class RedisAsyncUDSClient(CoreCommands):
+class RedisAsyncSocketClient(CoreCommands):
     @classmethod
     async def create(cls, config: ClientConfiguration = None, socket_connect_timeout=1):
         config = config or ClientConfiguration.get_default_config()
-        self = RedisAsyncUDSClient()
+        self = RedisAsyncSocketClient()
         self.config = config
         self.callback_index = 1
-        self._init_future = asyncio.Future()
         self.socket_connect_timeout = socket_connect_timeout
         self.write_buffer = bytearray(1024)
         self.read_buffer = bytearray(1024)
-        print(
-            start_socket_listener_external(
-                init_callback=self.init_connection,
-            )
+        self._should_close = False
+        # Get the current event loop.
+        loop = asyncio.get_running_loop()
+        self.loop = loop
+        # Create a new Future object.
+        fut = loop.create_future()
+        self._init_future = fut
+        self._done_init = False
+        print(" future: ", self._init_future)
+        self.availableFutures: dict[int, Awaitable[Optional[str]]] = {} 
+        def init_callback(socket_path: Optional[str], err: Optional[str]):
+            print("callback called!")
+            if err is not None:
+                raise(f"Failed to initialize the socket connection: {str(err)}")
+            elif socket_path is None:
+                raise("Recieved None as the socket_path")
+            else:
+                print("callback: Received path: ", socket_path)
+                self.socket_path = socket_path
+                self._done_init = True
+        start_socket_listener_external(
+            init_callback=init_callback
         )
+        
         print("awaiting for future...")
-        await self._init_future
+        await asyncio.wait_for(self.wait_for_init_complete(), 5)
         print("future completed!")
+        await self._create_uds_connection(self.socket_path, None)
+        server_url = to_url(**self.config.config_args)
+        print(f"setting address={server_url}")
+        res_future = await self._set_address(server_url)
+        print("waiting to read")
+        await self.wait_for_data()
+        assert res_future.result() is None
         return self
 
-    def init_connection(self, socket_path: Optional[str], err: Optional[str]):
-        print("init connection called")
-        asyncio.run(self._create_uds_connection(socket_path, err))
-
+    async def wait_for_init_complete(self):
+        while not self._done_init:
+            asyncio.sleep(0.1)
+    
     async def _create_uds_connection(self, socket_path: Optional[str], err: Optional[str]):
-        print("Python: start function was called")
-        if err:
-            print(f"Failed to initialize the socket connection: {str(e)}")
-            raise(f"Failed to initialize the socket connection: {str(e)}")
-        elif socket_path is None:
-            raise("Recieved None as the socket_path")
-        else:
-            self.socket_path = socket_path
             try:
                 print("Python connecting to UDS")
                 async with async_timeout.timeout(self.socket_connect_timeout):
@@ -90,27 +107,20 @@ class RedisAsyncUDSClient(CoreCommands):
                 self._reader = reader
                 self._writer = writer
                 print("Python: Connected!")
-                server_url = to_url(**self.config.config_args)
-                print(f"setting address={server_url}")
-                await self._set_address(server_url)
-                self._init_future.set_result("connected!")
             except Exception as e:
                 print(str(e))
                 self.close()
                 raise
-
+            
+        
     def close_socket(self, err=""):
         print(f"Closing socket {err}")
-        self._writer.close()
-        self._reader.close()
 
-    def _get_header_length(num_of_strings: int) -> int:
+    def _get_header_length(self, num_of_strings: int) -> int:
         return HEADER_LENGTH_IN_BYTES + 4*(num_of_strings - 1)
     
     async def _set_address(self, address):
-        print(f"REQ_ADDRESS:{REQ_ADDRESS}, type: {type(REQ_ADDRESS)}")
-        await self._write_to_socket(REQ_ADDRESS, address)
-        await self.read_from_socket() == None
+        return await self._write_to_socket(REQ_ADDRESS, address)
 
     async def execute_command(self, command, *args, **kwargs):
         pass
@@ -137,7 +147,7 @@ class RedisAsyncUDSClient(CoreCommands):
         args_len = []
         bytes_offest = header_len
         for arg in args:
-            b_arg = arg.encode('utf-8')
+            b_arg = arg.encode('UTF-8')
             arg_len = len(b_arg)
             args_len.append(arg_len)
             end_pos = bytes_offest + arg_len
@@ -146,9 +156,45 @@ class RedisAsyncUDSClient(CoreCommands):
 
         message_length = header_len + sum(len for len in args_len)
         self._write_header(callback_index, message_length, header_len, operation_type, args_len)
-        print(f'Send: {self.write_buffer!r}')
+        print(f'Send: {self.write_buffer[0:message_length]!r}')
         self._writer.write(self.write_buffer[0:message_length])
         await self._writer.drain()
+        response_future = asyncio.Future()
+        self.availableFutures.update({callback_index: response_future})
+        return response_future
 
-    async def read_from_socket(self):
-        pass
+    async def wait_for_data(self):
+        # print("waiting for data")
+        # while not self._should_close:
+        print("waiting...")
+        data = await asyncio.wait_for(self._reader.read(HEADER_LENGTH_IN_BYTES), 10)
+        await self._handle_read_data(data)
+    
+    def _parse_header(self, data):
+        assert len(data) == HEADER_LENGTH_IN_BYTES
+        msg_length = int.from_bytes(data[0:4], "little")
+        callback_idx = int.from_bytes(data[4:8], "little")
+        requset_type = int.from_bytes(data[8:12], "little")
+        return msg_length, callback_idx, requset_type
+        
+    async def _handle_read_data(self, data):
+        print("Got data!")
+        # length, callback_idx, type = self._to_header(data)
+        # if length - HEADER_LENGTH_IN_BYTES > 0:
+        # message = await self._reader.read(length - HEADER_LENGTH_IN_BYTES)
+        length, callback_idx, type = self._parse_header(data)
+        print(f"recieved valus: {length}, {callback_idx}, {type}")
+        response = None
+        if type == RES_NULL:
+            print("type is none")
+            response = None
+        elif type == RES_STRING:
+            print("type is string")
+            msg_length = length - HEADER_LENGTH_IN_BYTES
+            if msg_length > 0:
+                print("start waiting for message")
+                message = await self._reader.read(msg_length)
+                response = message.decode('UTF-8')
+                print(f"Got message! {response}")
+        self.availableFutures.get(callback_idx).set_result(response)
+        

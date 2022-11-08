@@ -1,5 +1,5 @@
 import pytest
-from pybushka.async_client import LOGGER, RedisAsyncFFIClient, RedisAsyncUDSClient
+from pybushka.async_client import LOGGER, RedisAsyncFFIClient, RedisAsyncSocketClient
 from pybushka.config import ClientConfiguration
 from pybushka.connection import AsyncFFIConnection
 
@@ -42,4 +42,4 @@ async def async_uds_client(request):
         host=host,
         port=port
     )
-    return await RedisAsyncUDSClient.create(config)
+    return await RedisAsyncSocketClient.create(config)

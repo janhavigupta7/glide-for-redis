@@ -5,6 +5,27 @@ use redis::socket_listener::headers::{HEADER_END, RequestType, ResponseType};
 use redis::socket_listener::start_socket_listener;
 use redis::{AsyncCommands, RedisResult};
 
+
+// #[pyclass]
+// #[derive(Debug, PartialEq, Eq, Clone)]
+// pub enum PyRequestType {
+//     /// Type of a server address request
+//     ServerAddress = RequestType::ServerAddress as isize,
+//     /// Type of a get string request.
+//     GetString = RequestType::GetString as isize,
+//     /// Type of a set string request.
+//     SetString = RequestType::SetString as isize,
+// }
+
+// #[pyclass]
+// #[derive(Debug, PartialEq, Eq, Clone)]
+// pub enum PyResponseType {
+//     /// Type of a response that returns a null.
+//     Null = ResponseType::Null as isize,
+//     /// Type of a response that returns a string.
+//     String = ResponseType::String as isize,
+// }
+
 #[pyclass]
 struct AsyncClient {
     multiplexer: MultiplexedConnection,
@@ -106,7 +127,43 @@ fn pybushka(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add("REQ_ADDRESS", RequestType::ServerAddress as u8).unwrap();
     m.add("REQ_GET", RequestType::GetString as u8).unwrap();
     m.add("REQ_SET", RequestType::SetString as u8).unwrap();
+    m.add("RES_NULL", ResponseType::Null as u8).unwrap();
+    m.add("RES_STRING", ResponseType::String as u8).unwrap();
 
+//     #[pyfn(m)]
+//     fn start_socket_listener_external(
+//         init_callback: &PyAny,
+//     ) -> PyResult<(PyObject)> {
+//         println!("Rust: strarting socket listener");
+//         let gil = Python::acquire_gil();
+//         let py = gil.python();
+//         let arc_callback = std::sync::Arc::new(init_callback);
+//         start_socket_listener(
+//             move |socket_path| {
+//                 println!("Rust: entered callback!");
+//                 let f = pyo3_asyncio::tokio::into_future(&(arc_callback.clone())).unwrap();
+//                 pyo3_asyncio::tokio::get_runtime();
+//                 //Python::with_gil(|py| {
+//                     pyo3_asyncio::tokio::run_until_complete(&(init_callback.clone()), async move {
+//                         // match socket_path {
+//                         //     Ok(path) => {println!("got ok path: {}", path);
+//                         //     let coro = init_callback.call(py, (path, py.None()), None);
+//                         //     pyo3_asyncio::tokio::into_future(init_callback.call(py, (path, py.None()), None))
+//                         // },
+//                         //     Err(err) => {let _ =init_callback.call(py, (py.None(), err.to_string()), None);},
+//                         // };
+//                         f.await.unwrap();
+//                         Ok(())
+//                     })
+//                     .unwrap();
+//                 //});
+
+//     });
+//     Ok(Python::with_gil(|py| "OK".into_py(py)))
+//     }
+
+//     Ok(())
+// }
     #[pyfn(m)]
     fn start_socket_listener_external(
         init_callback: PyObject,
@@ -118,43 +175,13 @@ fn pybushka(_py: Python, m: &PyModule) -> PyResult<()> {
                 let gil = Python::acquire_gil();
                 let py = gil.python();
                 match socket_path {
-                    Ok(path) => {println!("got ok path: {}", path);let _ = init_callback.call(py, (), Some([("socket_path", path)].into_py_dict(py)));},
-                    Err(err) => {let _ =init_callback.call(py, (), Some([("err", err.to_string().into_py(py))].into_py_dict(py)));},
+                    Ok(path) => {
+                        println!("got ok path: {}", path);
+                        let _ = init_callback.call(py, (path, py.None()), None);
+                    },
+                    Err(err) => {let _ =init_callback.call(py, (py.None(), err.to_string()), None);},
                     };
                 });
-
-            
-            // move |result| match result {
-            //     ClosingReason::ReadSocketClosed => {
-            //         let gil = Python::acquire_gil();
-            //         let py = gil.python();
-            //         let _ = close_callback.call(
-            //             py,
-            //             (),
-            //             Some([("err", "ReadSocketClosed")].into_py_dict(py)),
-            //         );
-            //     }
-            //     ClosingReason::UnhandledError(err) => {
-            //         let gil = Python::acquire_gil();
-            //         let py = gil.python();
-            //         let _ = close_callback.call(
-            //             py,
-            //             (),
-            //             Some([("err", err.to_string())].into_py_dict(py)),
-            //         );
-            //     }
-            //     ClosingReason::FailedInitialization(err) => {
-            //         // TODO - Do we want to differentiate this from UnhandledError ?
-            //         let gil = Python::acquire_gil();
-            //         let py = gil.python();
-            //         let _ = close_callback.call(
-            //             py,
-            //             (),
-            //             Some([("err", err.to_string())].into_py_dict(py)),
-            //         );
-            //     }
-            // },
-        //);
         Ok(Python::with_gil(|py| "OK".into_py(py)))
     }
 

@@ -100,6 +100,7 @@ async fn write_to_output(output: &[u8], write_socket: &UnixStream, write_lock: &
             .expect("Writable check failed");
         match write_socket.try_write(&output[total_written_bytes..]) {
             Ok(written_bytes) => {
+                println!("wrote response");
                 total_written_bytes += written_bytes;
             }
             Err(err)
@@ -343,6 +344,7 @@ async fn parse_address_create_conn(
         std::str::from_utf8(address),
         Some("Failed to parse address"),
     )?;
+    println!("Rust: got server address {}", address);
     let client = to_babushka_result(
         Client::open(address),
         Some("Failed to open redis-rs client"),
@@ -351,6 +353,7 @@ async fn parse_address_create_conn(
         client.get_multiplexed_async_connection().await,
         Some("Failed to create a multiplexed connection"),
     )?;
+    println!("Created connection");
 
     // Send response
     let mut output_buffer = [0_u8; HEADER_END];
@@ -426,6 +429,7 @@ async fn listen_on_client_stream(
     let rc_stream = Rc::new(stream);
     let write_lock = Rc::new(Mutex::new(()));
     let mut client_listener = SocketListener::new(rc_stream.clone());
+
     let connection = match wait_for_server_address_create_conn(
         &mut client_listener,
         &rc_stream,
