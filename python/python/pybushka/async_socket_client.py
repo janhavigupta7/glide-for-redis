@@ -8,14 +8,9 @@ from pybushka.utils import to_url
 
 from .pybushka import (
     HEADER_LENGTH_IN_BYTES,
-    REQ_ADDRESS,
-    REQ_GET,
-    REQ_SET,
-    RES_CLOSE_ERR,
-    RES_NULL,
-    RES_REQUEST_ERR,
-    RES_STRING,
     start_socket_listener_external,
+    PyRequestType,
+    PyResponseType
 )
 
 
@@ -71,8 +66,7 @@ class RedisAsyncSocketClient(CoreCommands):
             self._reader = reader
             self._writer = writer
         except Exception as e:
-            print(str(e))
-            self.close()
+            self.close(f"Failed to create UDS connection: {e}")
             raise
 
     def __del__(self):
@@ -94,13 +88,13 @@ class RedisAsyncSocketClient(CoreCommands):
         return response_future.result()
 
     async def _set_address(self, address):
-        return await self.execute_command(REQ_ADDRESS, address)
+        return await self.execute_command(int(PyRequestType.ServerAddress), address)
 
     async def set(self, key, value):
-        return await self.execute_command(REQ_SET, key, value)
+        return await self.execute_command(int(PyRequestType.SetString), key, value)
 
     async def get(self, key):
-        return await self.execute_command(REQ_GET, key)
+        return await self.execute_command(int(PyRequestType.GetString), key)
 
     def _write_int_to_socket(self, int_arg, bytes_offset, length=4, byteorder="little"):
         bytes_end = bytes_offset + length
@@ -184,7 +178,7 @@ class RedisAsyncSocketClient(CoreCommands):
         res_future = self._availableFutures.get(callback_idx)
         if not res_future:
             raise Exception(f"found invalid callback index: {callback_idx}")
-        if type == RES_NULL:
+        if type == int(PyResponseType.Null):
             res_future.set_result(None)
         else:
             msg_length = length - HEADER_LENGTH_IN_BYTES
@@ -197,11 +191,11 @@ class RedisAsyncSocketClient(CoreCommands):
                 response = message.decode("UTF-8")
             else:
                 response = ""
-            if type == RES_STRING:
+            if type ==  int(PyResponseType.String):
                 res_future.set_result(response)
-            elif type == RES_REQUEST_ERR:
+            elif type == int(PyResponseType.RequestError):
                 res_future.set_exception(response)
-            elif type == RES_CLOSE_ERR:
+            elif type == int(PyResponseType.ClosingError):
                 self.close(f"The server closed the connection with error: {response}")
             else:
                 self.close(f"Received invalid response type: {type}")

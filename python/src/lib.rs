@@ -10,6 +10,28 @@ struct AsyncClient {
     multiplexer: MultiplexedConnection,
 }
 
+#[pyclass]
+enum PyRequestType {
+    /// Type of a server address request
+    ServerAddress = RequestType::ServerAddress as isize,
+    /// Type of a get string request.
+    GetString = RequestType::GetString as isize,
+    /// Type of a set string request.
+    SetString = RequestType::SetString as isize,
+}
+
+#[pyclass]
+enum PyResponseType {
+    /// Type of a response that returns a null.
+    Null = ResponseType::Null as isize,
+    /// Type of a response that returns a string.
+    String = ResponseType::String as isize,
+    /// Type of response containing an error that impacts a single request.
+    RequestError = ResponseType::RequestError as isize,
+    /// Type of response containing an error causes the connection to close.
+    ClosingError = ResponseType::ClosingError as isize,
+}
+
 #[pymethods]
 impl AsyncClient {
     #[staticmethod]
@@ -102,18 +124,9 @@ impl AsyncPipeline {
 #[pymodule]
 fn pybushka(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<AsyncClient>()?;
+    m.add_class::<PyRequestType>()?;
+    m.add_class::<PyResponseType>()?;
     m.add("HEADER_LENGTH_IN_BYTES", HEADER_END).unwrap();
-    // TODO: find a better way to import rust enums to python
-    m.add("REQ_ADDRESS", RequestType::ServerAddress as u8)
-        .unwrap();
-    m.add("REQ_GET", RequestType::GetString as u8).unwrap();
-    m.add("REQ_SET", RequestType::SetString as u8).unwrap();
-    m.add("RES_NULL", ResponseType::Null as u8).unwrap();
-    m.add("RES_STRING", ResponseType::String as u8).unwrap();
-    m.add("RES_REQUEST_ERR", ResponseType::RequestError as u8)
-        .unwrap();
-    m.add("RES_CLOSE_ERR", ResponseType::ClosingError as u8)
-        .unwrap();
 
     #[pyfn(m)]
     fn start_socket_listener_external(init_callback: PyObject) -> PyResult<PyObject> {

@@ -1,5 +1,6 @@
 import pytest
-from python.python.pybushka.async_ffi_client import RedisAsyncFFIClient, RedisAsyncSocketClient
+from pybushka.async_ffi_client import RedisAsyncFFIClient
+from pybushka.async_socket_client import RedisAsyncSocketClient
 from pybushka.config import ClientConfiguration
 
 default_host = "localhost"
@@ -24,7 +25,7 @@ def pytest_addoption(parser):
 
 @pytest.fixture()
 async def async_ffi_client(request):
-    "Get async client for tests"
+    "Get async FFI client for tests"
     host = request.config.getoption("--host")
     port = request.config.getoption("--port")
     config = ClientConfiguration(host=host, port=port)
@@ -33,7 +34,7 @@ async def async_ffi_client(request):
 
 @pytest.fixture()
 async def async_socket_client(request):
-    "Get async client for tests"
+    "Get async socket client for tests"
     host = request.config.getoption("--host")
     port = request.config.getoption("--port")
     config = ClientConfiguration(host=host, port=port)
