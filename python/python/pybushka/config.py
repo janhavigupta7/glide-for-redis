@@ -9,9 +9,7 @@ BASE_ALLOWED_KEYS = {
     "user",
     "password",
     "retry",
-    "timeout",
-    "read_socket_name",
-    "write_socket_name",
+    "connection_timeout",
 }
 
 DEFAULT_HOST = "localhost"
@@ -22,6 +20,7 @@ DEFAULT_CONFIGS = {
     "port": DEFAULT_PORT,
     "db": 0,
     "tls_enabled": False,
+    "connection_timeout": 1 # seconds
 }
 
 
