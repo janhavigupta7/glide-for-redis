@@ -1,5 +1,4 @@
 import asyncio
-import logging
 from typing import Awaitable, Optional, Type
 
 import async_timeout
@@ -7,11 +6,18 @@ from pybushka.commands.core import CoreCommands
 from pybushka.config import ClientConfiguration
 from pybushka.utils import to_url
 
-from .pybushka import (HEADER_LENGTH_IN_BYTES, REQ_ADDRESS, REQ_GET, REQ_SET,
-                       RES_CLOSE_ERR, RES_NULL, RES_REQUEST_ERR, RES_STRING,
-                       AsyncClient, start_socket_listener_external)
-
-LOGGER = logging.getLogger(__name__)
+from .pybushka import (
+    HEADER_LENGTH_IN_BYTES,
+    REQ_ADDRESS,
+    REQ_GET,
+    REQ_SET,
+    RES_CLOSE_ERR,
+    RES_NULL,
+    RES_REQUEST_ERR,
+    RES_STRING,
+    AsyncClient,
+    start_socket_listener_external,
+)
 
 
 class RedisAsyncFFIClient(CoreCommands):
