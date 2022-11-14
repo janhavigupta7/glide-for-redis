@@ -33,7 +33,6 @@ function runPythonBenchmark(){
   cd ${PYTHON_FOLDER}
   $pythonCommand -m venv .env
   source .env/bin/activate
-  export PYTHONPATH=/home/ubuntu/.local/lib/python3.10/site-packages/:$PYTHONPATH
   pip install --upgrade --quiet pip
   pip install --quiet -r requirements.txt
   maturin develop --release
