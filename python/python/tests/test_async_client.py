@@ -1,19 +1,18 @@
+import asyncio
 import logging
-import os
 from datetime import datetime
 
 import pytest
-from pybushka import start_socket_listener_external
-from pybushka.utils import to_url
+
 
 LOGGER = logging.getLogger(__name__)
 
 @pytest.mark.asyncio
 class TestSocketClient:
-    def test_socket_client(self, async_uds_client):
-        # Make sure the socket does not already exist
-        assert 1
-        async_uds_client.close_socket()
+    async def test_set_get(self, async_socket_client):
+        time_str = datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
+        assert await async_socket_client.set("key", time_str) is None
+        assert await async_socket_client.get("key") == time_str
 
 
 @pytest.mark.asyncio

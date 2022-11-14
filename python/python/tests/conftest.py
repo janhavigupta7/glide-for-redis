@@ -33,7 +33,7 @@ async def async_ffi_client(request):
 
 
 @pytest.fixture()
-async def async_uds_client(request):
+async def async_socket_client(request):
     print("hey")
     "Get async client for tests"
     host = request.config.getoption("--host")

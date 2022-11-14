@@ -130,53 +130,16 @@ fn pybushka(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add("RES_NULL", ResponseType::Null as u8).unwrap();
     m.add("RES_STRING", ResponseType::String as u8).unwrap();
 
-//     #[pyfn(m)]
-//     fn start_socket_listener_external(
-//         init_callback: &PyAny,
-//     ) -> PyResult<(PyObject)> {
-//         println!("Rust: strarting socket listener");
-//         let gil = Python::acquire_gil();
-//         let py = gil.python();
-//         let arc_callback = std::sync::Arc::new(init_callback);
-//         start_socket_listener(
-//             move |socket_path| {
-//                 println!("Rust: entered callback!");
-//                 let f = pyo3_asyncio::tokio::into_future(&(arc_callback.clone())).unwrap();
-//                 pyo3_asyncio::tokio::get_runtime();
-//                 //Python::with_gil(|py| {
-//                     pyo3_asyncio::tokio::run_until_complete(&(init_callback.clone()), async move {
-//                         // match socket_path {
-//                         //     Ok(path) => {println!("got ok path: {}", path);
-//                         //     let coro = init_callback.call(py, (path, py.None()), None);
-//                         //     pyo3_asyncio::tokio::into_future(init_callback.call(py, (path, py.None()), None))
-//                         // },
-//                         //     Err(err) => {let _ =init_callback.call(py, (py.None(), err.to_string()), None);},
-//                         // };
-//                         f.await.unwrap();
-//                         Ok(())
-//                     })
-//                     .unwrap();
-//                 //});
-
-//     });
-//     Ok(Python::with_gil(|py| "OK".into_py(py)))
-//     }
-
-//     Ok(())
-// }
     #[pyfn(m)]
     fn start_socket_listener_external(
         init_callback: PyObject,
     ) -> PyResult<PyObject> {
-        println!("Rust: strarting socket listener");
         start_socket_listener(
             move |socket_path| {
-                println!("Rust: entered callback!");
                 let gil = Python::acquire_gil();
                 let py = gil.python();
                 match socket_path {
                     Ok(path) => {
-                        println!("got ok path: {}", path);
                         let _ = init_callback.call(py, (path, py.None()), None);
                     },
                     Err(err) => {let _ =init_callback.call(py, (py.None(), err.to_string()), None);},
