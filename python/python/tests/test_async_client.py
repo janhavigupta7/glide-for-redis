@@ -1,11 +1,7 @@
-import asyncio
-import logging
 from datetime import datetime
 
 import pytest
 
-
-LOGGER = logging.getLogger(__name__)
 
 @pytest.mark.asyncio
 class TestSocketClient:

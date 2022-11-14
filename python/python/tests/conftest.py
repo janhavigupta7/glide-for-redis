@@ -1,7 +1,6 @@
 import pytest
-from pybushka.async_client import LOGGER, RedisAsyncFFIClient, RedisAsyncSocketClient
+from pybushka.async_client import RedisAsyncFFIClient, RedisAsyncSocketClient
 from pybushka.config import ClientConfiguration
-from pybushka.connection import AsyncFFIConnection
 
 default_host = "localhost"
 default_port = 6379
@@ -38,8 +37,5 @@ async def async_socket_client(request):
     "Get async client for tests"
     host = request.config.getoption("--host")
     port = request.config.getoption("--port")
-    config = ClientConfiguration(
-        host=host,
-        port=port
-    )
+    config = ClientConfiguration(host=host, port=port)
     return await RedisAsyncSocketClient.create(config)

@@ -426,7 +426,6 @@ async fn listen_on_client_stream(
     let rc_stream = Rc::new(stream);
     let write_lock = Rc::new(Mutex::new(()));
     let mut client_listener = SocketListener::new(rc_stream.clone());
-
     let connection = match wait_for_server_address_create_conn(
         &mut client_listener,
         &rc_stream,

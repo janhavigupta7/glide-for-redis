@@ -1,30 +1,10 @@
 use pyo3::prelude::*;
-use pyo3::types::{IntoPyDict, PyString};
+use pyo3::types::PyString;
 use redis::aio::MultiplexedConnection;
 use redis::socket_listener::headers::{HEADER_END, RequestType, ResponseType};
 use redis::socket_listener::start_socket_listener;
 use redis::{AsyncCommands, RedisResult};
 
-
-// #[pyclass]
-// #[derive(Debug, PartialEq, Eq, Clone)]
-// pub enum PyRequestType {
-//     /// Type of a server address request
-//     ServerAddress = RequestType::ServerAddress as isize,
-//     /// Type of a get string request.
-//     GetString = RequestType::GetString as isize,
-//     /// Type of a set string request.
-//     SetString = RequestType::SetString as isize,
-// }
-
-// #[pyclass]
-// #[derive(Debug, PartialEq, Eq, Clone)]
-// pub enum PyResponseType {
-//     /// Type of a response that returns a null.
-//     Null = ResponseType::Null as isize,
-//     /// Type of a response that returns a string.
-//     String = ResponseType::String as isize,
-// }
 
 #[pyclass]
 struct AsyncClient {
@@ -124,11 +104,15 @@ impl AsyncPipeline {
 fn pybushka(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<AsyncClient>()?;
     m.add("HEADER_LENGTH_IN_BYTES", HEADER_END).unwrap();
+    // TODO: find a better way to import rust enums to python 
     m.add("REQ_ADDRESS", RequestType::ServerAddress as u8).unwrap();
     m.add("REQ_GET", RequestType::GetString as u8).unwrap();
     m.add("REQ_SET", RequestType::SetString as u8).unwrap();
     m.add("RES_NULL", ResponseType::Null as u8).unwrap();
     m.add("RES_STRING", ResponseType::String as u8).unwrap();
+    m.add("RES_REQUEST_ERR", ResponseType::RequestError as u8).unwrap();
+    m.add("RES_CLOSE_ERR", ResponseType::ClosingError as u8).unwrap();
+
 
     #[pyfn(m)]
     fn start_socket_listener_external(
@@ -136,14 +120,14 @@ fn pybushka(_py: Python, m: &PyModule) -> PyResult<()> {
     ) -> PyResult<PyObject> {
         start_socket_listener(
             move |socket_path| {
-                let gil = Python::acquire_gil();
-                let py = gil.python();
+                Python::with_gil(|py| {
                 match socket_path {
                     Ok(path) => {
                         let _ = init_callback.call(py, (path, py.None()), None);
                     },
                     Err(err) => {let _ =init_callback.call(py, (py.None(), err.to_string()), None);},
                     };
+                });
                 });
         Ok(Python::with_gil(|py| "OK".into_py(py)))
     }

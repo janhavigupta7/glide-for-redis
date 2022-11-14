@@ -1,7 +1,5 @@
 from abc import ABC, abstractmethod
 
-from pybushka.connection import AsyncFFIConnection, AsyncSocketConnection
-
 BASE_ALLOWED_KEYS = {
     "host",
     "port",
@@ -20,7 +18,7 @@ DEFAULT_CONFIGS = {
     "port": DEFAULT_PORT,
     "db": 0,
     "tls_enabled": False,
-    "connection_timeout": 1 # seconds
+    "connection_timeout": 1,  # seconds
 }
 
 
