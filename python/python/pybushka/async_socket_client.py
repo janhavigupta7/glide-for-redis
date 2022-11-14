@@ -15,43 +15,8 @@ from .pybushka import (
     RES_NULL,
     RES_REQUEST_ERR,
     RES_STRING,
-    AsyncClient,
     start_socket_listener_external,
 )
-
-
-class RedisAsyncFFIClient(CoreCommands):
-    @classmethod
-    async def create(cls, config: ClientConfiguration = None):
-        config = config or ClientConfiguration.get_default_config()
-        self = RedisAsyncFFIClient()
-        self.config = config
-        self.connection = await self._create_multiplexed_conn()
-        self.rust_functions = self._initialize_functions([CoreCommands])
-        return self
-
-    def _initialize_functions(self, classes):
-        funcs = dict()
-        for cls in classes:
-            for method in dir(cls):
-                if not method.startswith("__"):
-                    try:
-                        func = getattr(self.connection, method)
-                        funcs[method] = func
-                    except AttributeError:
-                        # The connection doesn't have this method
-                        pass
-        return funcs
-
-    async def _create_multiplexed_conn(self):
-        return await AsyncClient.create_client(to_url(**self.config.config_args))
-
-    async def execute_command(self, command, *args, **kwargs):
-        conn_rust_func = self.rust_functions.get(command)
-        return await conn_rust_func(*args, **kwargs)
-
-    def create_pipeline(self):
-        return self.connection.create_pipeline()
 
 
 class RedisAsyncSocketClient(CoreCommands):
@@ -72,9 +37,9 @@ class RedisAsyncSocketClient(CoreCommands):
             if err is not None:
                 raise (f"Failed to initialize the socket connection: {str(err)}")
             elif socket_path is None:
-                raise ("Recieved None as the socket_path")
+                raise ("Received None as the socket_path")
             else:
-                # Recieved socket path
+                # Received socket path
                 self.socket_path = socket_path
                 self._done_init = True
 
@@ -144,7 +109,7 @@ class RedisAsyncSocketClient(CoreCommands):
         )
 
     def _write_header(
-        self, callback_index, message_length, header_len, operation_type, args_len_array
+        self, callback_index, message_length, operation_type, args_len_array
     ):
         self._write_int_to_socket(message_length, 0)
         self._write_int_to_socket(callback_index, 4)
@@ -185,14 +150,13 @@ class RedisAsyncSocketClient(CoreCommands):
             self._write_header(
                 callback_index,
                 message_length,
-                header_len,
                 operation_type,
                 args_len_array,
             )
-            self._writer.write(self.write_buffer[0:message_length])
-            await self._writer.drain()
             # Create a response future for this reqest and add it to the available futures map
             response_future = asyncio.Future()
+            self._writer.write(self.write_buffer[0:message_length])
+            await self._writer.drain()
             self._availableFutures.update({callback_index: response_future})
             return response_future
 
@@ -206,7 +170,7 @@ class RedisAsyncSocketClient(CoreCommands):
                 else:
                     self.close(f"Recieced wrong number of bytes: {data}")
                 break
-            # Parse the recieved header and wait for the rest of the message
+            # Parse the received header and wait for the rest of the message
             await self._handle_read_data(data)
 
     def _parse_header(self, data):
@@ -240,5 +204,5 @@ class RedisAsyncSocketClient(CoreCommands):
             elif type == RES_CLOSE_ERR:
                 self.close(f"The server closed the connection with error: {response}")
             else:
-                self.close(f"Recieved invalid response type: {type}")
+                self.close(f"Received invalid response type: {type}")
         self._availableCallbackIndexes.add(callback_idx)
