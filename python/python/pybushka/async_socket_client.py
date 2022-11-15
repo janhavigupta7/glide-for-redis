@@ -46,7 +46,7 @@ class RedisAsyncSocketClient(CoreCommands):
         )
         await self._create_uds_connection()
         # Start the reader loop as a background task
-        self.reader_task = asyncio.create_task(self._reader_loop())
+        self._reader_task = asyncio.create_task(self._reader_loop())
         server_url = to_url(**self.config.config_args)
         # Set the server address
         await self._set_address(server_url)
@@ -70,8 +70,14 @@ class RedisAsyncSocketClient(CoreCommands):
             raise
 
     def __del__(self):
-        if self.reader_task:
-            self.reader_task.cancel()
+        try:
+            if self._reader_task:
+                self._reader_task.cancel()
+            pass
+        except RuntimeError as e:
+            if "no running event loop" in str(e):
+                # event loop already closed
+                pass
 
     def close(self, err=""):
         if err:
@@ -157,15 +163,12 @@ class RedisAsyncSocketClient(CoreCommands):
     async def _reader_loop(self):
         # Socket reader loop
         while True:
-            data = await self._reader.read(HEADER_LENGTH_IN_BYTES)
-            if len(data) != HEADER_LENGTH_IN_BYTES:
-                if len(data) == 0:
-                    self.close("The server closed the connection")
-                else:
-                    self.close(f"Recieced wrong number of bytes: {data}")
-                break
-            # Parse the received header and wait for the rest of the message
-            await self._handle_read_data(data)
+            try:
+                data = await self._reader.read(HEADER_LENGTH_IN_BYTES)
+                # Parse the received header and wait for the rest of the message
+                await self._handle_read_data(data)
+            except asyncio.IncompleteReadError:
+                self.close("The server closed the connection")
 
     def _parse_header(self, data):
         msg_length = int.from_bytes(data[0:4], "little")
@@ -187,8 +190,8 @@ class RedisAsyncSocketClient(CoreCommands):
                 if offset != 0:
                     msg_length += 4 - offset
                 # Wait for the rest of the message
-                message = await self._reader.read(msg_length)
-                response = message.decode("UTF-8")
+                message = await self._reader.readexactly(msg_length)
+                response = message.decode("UTF-8").rstrip("\x00")
             else:
                 response = ""
             if type ==  int(PyResponseType.String):

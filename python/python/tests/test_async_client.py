@@ -1,7 +1,14 @@
+import asyncio
 from datetime import datetime
+import random
+import string
 
 import pytest
 
+def get_random_string(length):
+    letters = string.ascii_letters + string.digits + string.punctuation
+    result_str = ''.join(random.choice(letters) for i in range(length))
+    return result_str
 
 @pytest.mark.asyncio
 class TestSocketClient:
@@ -10,6 +17,38 @@ class TestSocketClient:
         assert await async_socket_client.set("key", time_str) is None
         assert await async_socket_client.get("key") == time_str
 
+    async def test_large_values(self, async_socket_client):
+        length = 2**16
+        key = get_random_string(length)
+        value = get_random_string(length)
+        assert len(key) == length
+        assert len(value) == length
+        await async_socket_client.set(key, value)
+        assert await async_socket_client.get(key) == value
+
+    async def test_non_ascii_unicode(self, async_socket_client):
+        key = "foo"
+        value = "שלום hello 汉字"
+        b_value = value.encode('utf-8')
+        assert b_value.decode('utf-8') == value
+        assert value == "שלום hello 汉字"
+        await async_socket_client.set(key, value)
+        assert await async_socket_client.get(key) == value
+    
+    @pytest.mark.parametrize("value_size", [100, 2**16])
+    async def test_concurrent_tasks(self, async_socket_client, value_size):
+        num_of_concurrent_tasks = 20
+        running_tasks = set()
+        async def exec_command(i):
+            value = get_random_string(value_size)
+            await async_socket_client.set(str(i), value)
+            assert await async_socket_client.get(str(i)) == value
+
+        for i in range(num_of_concurrent_tasks):
+            task = asyncio.create_task(exec_command(i))
+            running_tasks.add(task)
+            task.add_done_callback(running_tasks.discard)
+        await asyncio.gather(*(list(running_tasks)))
 
 @pytest.mark.asyncio
 class TestCoreCommands:
