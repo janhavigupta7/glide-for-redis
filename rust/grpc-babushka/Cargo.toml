@@ -1,0 +1,22 @@
+[package]
+name = "grpc-babushka"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]] # Bin to run the HelloWorld gRPC server
+name = "babushka-server"
+path = "src/server.rs"
+
+[[bin]] # Bin to run the HelloWorld gRPC client
+name = "babushka-client"
+path = "src/client.rs"
+
+[dependencies]
+tonic = "0.8"
+prost = "0.11"
+tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "fs", "macros", "net",] }
+tokio-stream = { version = "0.1", features = ["net"] }
+tower = { version = "0.4" }
+
+[build-dependencies]
+tonic-build = "0.8"
