@@ -1,8 +1,10 @@
+
 use pyo3::prelude::*;
 use pyo3::types::PyString;
 use redis::aio::MultiplexedConnection;
 use redis::socket_listener::headers::{RequestType, ResponseType, HEADER_END};
 use redis::socket_listener::start_socket_listener;
+use grpcbabushka::grpc_listener::start_grpc_listener;
 use redis::{AsyncCommands, RedisResult};
 
 #[pyclass]
@@ -131,6 +133,24 @@ fn pybushka(_py: Python, m: &PyModule) -> PyResult<()> {
     #[pyfn(m)]
     fn start_socket_listener_external(init_callback: PyObject) -> PyResult<PyObject> {
         start_socket_listener(move |socket_path| {
+            Python::with_gil(|py| {
+                match socket_path {
+                    Ok(path) => {
+                        let _ = init_callback.call(py, (path, py.None()), None);
+                    }
+                    Err(err) => {
+                        let _ = init_callback.call(py, (py.None(), err.to_string()), None);
+                    }
+                };
+            });
+        });
+        Ok(Python::with_gil(|py| "OK".into_py(py)))
+    }
+
+
+    #[pyfn(m)]
+    fn start_grpc_listener_external(init_callback: PyObject) -> PyResult<PyObject> {
+        start_grpc_listener(move |socket_path| {
             Python::with_gil(|py| {
                 match socket_path {
                     Ok(path) => {

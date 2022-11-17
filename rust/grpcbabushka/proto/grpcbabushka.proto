@@ -1,0 +1,36 @@
+syntax = "proto3";
+package grpcbabushka;
+
+
+service Greeter {
+    rpc Get (GetRequest) returns (GetReply);
+    rpc Set (SetRequest) returns (SetReply);
+    rpc ConnectServer (ConnectRequest) returns (ConnectReply);
+}
+
+
+message ConnectRequest {
+    string server_address = 1;
+ }
+
+message GetRequest {
+    string client_id = 1;
+    string key = 2;
+ }
+
+message SetRequest {
+    string client_id = 1;
+    string key = 2;
+    string value = 3;
+ }
+
+message ConnectReply {
+    string client_id = 1;
+}
+message GetReply {
+    string value = 1;
+}
+
+message SetReply {
+    string response = 1;
+}
