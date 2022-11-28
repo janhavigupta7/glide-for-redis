@@ -22,7 +22,9 @@ use tokio::sync::Notify;
 use tokio::task;
 use ClosingReason::*;
 use PipeListeningResult::*;
-
+use protobuf::Message;
+use babushkaproto::{CommandReply, Request};
+use num_traits::FromPrimitive;
 /// The socket file name
 pub const SOCKET_FILE_NAME: &str = "babushka-socket";
 
@@ -85,7 +87,9 @@ impl SocketListener {
                 {
                     continue;
                 }
-                Err(err) => return UnhandledError(err.into()).into(),
+                Err(err) => {
+                    // println!("next_values: recieved error: {}", err);
+                    return UnhandledError(err.into()).into()},
             }
         }
     }
@@ -156,21 +160,53 @@ fn write_response_header(
     Ok(())
 }
 
-async fn send_set_request(
-    buffer: SharedBuffer,
-    key_range: Range<usize>,
-    value_range: Range<usize>,
+async fn write_command_reply(
+    write_socket: Rc<UnixStream>,
+    write_lock: Rc<Mutex<()>>,
     callback_index: u32,
+    response: Option<String>,
+    pool: &Pool<Vec<u8>>,
+    is_error: bool)
+    -> RedisResult<()>  {
+        let mut out_msg = CommandReply::new();
+        out_msg.callback_idx = callback_index;
+        match response {
+            Some(res) => { 
+                if is_error {
+                    //println!("Rust: writing reply, callback_index={}, error={}", callback_index, std::str::from_utf8(&res).unwrap());
+                    out_msg.error = res;
+                } else {
+                    //println!("Rust: writing reply, callback_idx: {}, response={}", callback_index, std::str::from_utf8(&res).unwrap());
+
+                    out_msg.response = res;
+                }
+            },
+            None => {},
+        };
+        let msg_length = out_msg.compute_size();
+        // println!("out msg={}, msg_length={}", protobuf::text_format::print_to_string(&out_msg), msg_length);
+        let mut output_buffer = get_vec(pool, msg_length as usize + 4);
+        // Write header
+        output_buffer.write_u32::<LittleEndian>(msg_length as u32)?;
+        // Write response
+        output_buffer.extend_from_slice(&out_msg.write_to_bytes().unwrap());
+        write_to_output(&output_buffer, &write_socket, &write_lock).await;
+        Ok(())
+    }
+async fn send_set_request(
+    request: &Request,
     mut connection: MultiplexedConnection,
     write_socket: Rc<UnixStream>,
     write_lock: Rc<Mutex<()>>,
+    pool: &Pool<Vec<u8>>,
 ) -> RedisResult<()> {
+    let args = request.arg.to_vec();
+    let key = &args[0];
+    let value = &args[1];
     connection
-        .set(&buffer[key_range], &buffer[value_range])
+        .set(key, value)
         .await?;
-    let mut output_buffer = [0_u8; HEADER_END];
-    write_response_header(&mut output_buffer, callback_index, ResponseType::Null)?;
-    write_to_output(&output_buffer, &write_socket, &write_lock).await;
+    write_command_reply(write_socket.clone(), write_lock.clone(), request.callback_idx, None, pool, false).await?;
     Ok(())
 }
 
@@ -182,55 +218,31 @@ fn get_vec(pool: &Pool<Vec<u8>>, required_capacity: usize) -> RcRecycled<Vec<u8>
 }
 
 async fn send_get_request(
-    vec: SharedBuffer,
-    key_range: Range<usize>,
-    callback_index: u32,
+    request: &Request,
     mut connection: MultiplexedConnection,
     write_socket: Rc<UnixStream>,
     pool: &Pool<Vec<u8>>,
     write_lock: Rc<Mutex<()>>,
 ) -> RedisResult<()> {
-    let result: Option<Vec<u8>> = connection.get(&vec[key_range]).await?;
-    match result {
-        Some(result_bytes) => {
-            let length = HEADER_END + result_bytes.len();
-            let mut output_buffer = get_vec(pool, length);
-            write_response_header_to_vec(
-                &mut output_buffer,
-                callback_index,
-                ResponseType::String,
-                length,
-            )?;
-            output_buffer.extend_from_slice(&result_bytes);
-            let offset = output_buffer.len() % 4;
-            if offset != 0 {
-                output_buffer.resize(length + 4 - offset, 0);
-            }
-            write_to_output(&output_buffer, &write_socket, &write_lock).await;
-        }
-        None => {
-            let mut output_buffer = [0_u8; HEADER_END];
-            write_response_header(&mut output_buffer, callback_index, ResponseType::Null)?;
-            write_to_output(&output_buffer, &write_socket, &write_lock).await;
-        }
-    };
+    let key = request.arg.first().unwrap();
+    let result: Option<String> = connection.get(key).await?;
+    write_command_reply(write_socket, write_lock, request.callback_idx, result, pool, false).await?;
     Ok(())
 }
 
 fn handle_request(
-    request: WholeRequest,
+    whole_request: WholeRequest,
     connection: MultiplexedConnection,
     write_socket: Rc<UnixStream>,
     pool: Rc<Pool<Vec<u8>>>,
     write_lock: Rc<Mutex<()>>,
 ) {
     task::spawn_local(async move {
-        let result = match request.request_type {
-            RequestRanges::Get { key: key_range } => {
+        let request = &whole_request.request;
+        let result = match FromPrimitive::from_u32(request.request_type.clone()).unwrap() {
+            RequestType::GetString => {
                 send_get_request(
-                    request.buffer,
-                    key_range,
-                    request.callback_index,
+                    request,
                     connection,
                     write_socket.clone(),
                     &pool,
@@ -238,29 +250,25 @@ fn handle_request(
                 )
                 .await
             }
-            RequestRanges::Set {
-                key: key_range,
-                value: value_range,
-            } => {
-                send_set_request(
-                    request.buffer,
-                    key_range,
-                    value_range,
-                    request.callback_index,
+            RequestType::SetString => {
+                let res = send_set_request(
+                    request,
                     connection,
                     write_socket.clone(),
                     write_lock.clone(),
+                    &pool,
                 )
-                .await
+                .await;
+                res
             }
-            RequestRanges::ServerAddress { address: _ } => {
+            RequestType::ServerAddress => {
                 unreachable!("Server address can only be sent once")
             }
         };
         if let Err(err) = result {
             write_error(
                 err,
-                request.callback_index,
+                request.callback_idx,
                 write_socket,
                 &pool,
                 write_lock,
@@ -281,16 +289,8 @@ async fn write_error(
 ) {
     let err_str = err.to_string();
     let error_bytes = err_str.as_bytes();
-    let length = HEADER_END + error_bytes.len();
-    let mut output_buffer = get_vec(pool, length);
-    write_response_header_to_vec(&mut output_buffer, callback_index, response_type, length)
-        .expect("Failed writing error to vec");
-    output_buffer.extend_from_slice(error_bytes);
-    let offset = output_buffer.len() % 4;
-    if offset != 0 {
-        output_buffer.resize(length + 4 - offset, 0);
-    }
-    write_to_output(&output_buffer, &write_socket, &write_lock).await;
+    write_command_reply(write_socket, write_lock, callback_index, Some(err_str.into()), pool, true).await.expect("Failed writing error to vec");
+    
 }
 
 async fn handle_requests(
@@ -308,7 +308,7 @@ async fn handle_requests(
             write_socket.clone(),
             pool.clone(),
             write_lock.clone(),
-        )
+        );
     }
     // Yield to ensure that the subtasks aren't starved.
     task::yield_now().await;
@@ -331,18 +331,14 @@ fn to_babushka_result<T, E: std::fmt::Display>(
 }
 
 async fn parse_address_create_conn(
-    socket: &Rc<UnixStream>,
-    request: &WholeRequest,
-    address_range: Range<usize>,
+    write_socket: &Rc<UnixStream>,
+    request: &Request,
     write_lock: &Rc<Mutex<()>>,
+    pool: Rc<Pool<Vec<u8>>>,
 ) -> Result<MultiplexedConnection, BabushkaError> {
-    let address = &request.buffer[address_range];
-    let address = to_babushka_result(
-        std::str::from_utf8(address),
-        Some("Failed to parse address"),
-    )?;
+    let address = request.arg.first().unwrap();
     let client = to_babushka_result(
-        Client::open(address),
+        Client::open(address.as_str()),
         Some("Failed to open redis-rs client"),
     )?;
     let connection = to_babushka_result(
@@ -351,14 +347,14 @@ async fn parse_address_create_conn(
     )?;
 
     // Send response
-    let mut output_buffer = [0_u8; HEADER_END];
-    write_response_header(
-        &mut output_buffer,
-        request.callback_index,
-        ResponseType::Null,
-    )
-    .expect("Failed writing address response.");
-    write_to_output(&output_buffer, socket, write_lock).await;
+    to_babushka_result(write_command_reply(
+        write_socket.clone(), 
+        write_lock.clone(),
+        request.callback_idx,
+        None,
+        &pool,
+        false).await,
+        Some("Failed to write address response"))?;
     Ok(connection)
 }
 
@@ -374,18 +370,17 @@ async fn wait_for_server_address_create_conn(
         }
         ReceivedValues(received_requests) => {
             if let Some(index) = (0..received_requests.len()).next() {
-                let request = received_requests
+                let whole_request = received_requests
                     .get(index)
                     .ok_or_else(|| BabushkaError::BaseError("No received requests".to_string()))?;
-                match request.request_type.clone() {
-                    RequestRanges::ServerAddress {
-                        address: address_range,
-                    } => {
+                let request = &whole_request.request;
+                match FromPrimitive::from_u32(request.request_type.clone()).unwrap() {
+                    RequestType::ServerAddress => {
                         return parse_address_create_conn(
                             socket,
                             request,
-                            address_range,
                             write_lock,
+                            client_listener.pool.clone(),
                         )
                         .await
                     }
@@ -445,6 +440,7 @@ async fn listen_on_client_stream(
         match client_listener.next_values().await {
             Closed(reason) => {
                 if let ClosingReason::UnhandledError(err) = reason {
+                    println!("Got unhandled errors: {}", err);
                     write_error(
                         err,
                         u32::MAX,

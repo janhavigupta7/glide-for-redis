@@ -10,7 +10,8 @@ use lifeguard::Pool;
 use num_traits::FromPrimitive;
 
 use super::headers::*;
-
+use babushkaproto::Request;
+use protobuf::Message;
 /// An enum representing a request during the parsing phase.
 pub(super) enum RequestState {
     /// Parsing completed.
@@ -30,8 +31,8 @@ pub(super) enum RequestState {
 
 pub(super) struct ReadHeader {
     pub(super) length: usize,
-    pub(super) callback_index: u32,
-    pub(super) request_type: RequestType,
+    // pub(super) callback_index: u32,
+    // pub(super) request_type: RequestType,
 }
 
 /// An object handling a arranging read buffers, and parsing the data in the buffers into requests.
@@ -53,20 +54,9 @@ impl RotatingBuffer {
 
     fn read_header(input: &[u8]) -> io::Result<ReadHeader> {
         let length = (&input[..MESSAGE_LENGTH_END]).read_u32::<LittleEndian>()? as usize;
-        let callback_index =
-            (&input[MESSAGE_LENGTH_END..CALLBACK_INDEX_END]).read_u32::<LittleEndian>()?;
 
-        let request_type = (&input[CALLBACK_INDEX_END..HEADER_END]).read_u32::<LittleEndian>()?;
-        let request_type = FromPrimitive::from_u32(request_type).ok_or_else(|| {
-            Error::new(
-                ErrorKind::InvalidInput,
-                format!("failed to parse request type {}", request_type),
-            )
-        })?;
         Ok(ReadHeader {
             length,
-            callback_index,
-            request_type,
         })
     }
 
@@ -80,43 +70,22 @@ impl RotatingBuffer {
         }
         let header = Self::read_header(&buffer[request_range.start..request_range.end])?;
         let header_end = request_range.start + HEADER_END;
-        let next = request_range.start + header.length;
+        let next = request_range.start + HEADER_END + header.length;
         if next > request_range.end {
             return Ok(RequestState::PartialWithHeader {
-                length: header.length,
+                length: header.length + 4,
             });
         }
-        // TODO - use serde for easier deserialization.
-        let request = match header.request_type {
-            RequestType::ServerAddress => WholeRequest {
-                callback_index: header.callback_index,
-                request_type: RequestRanges::ServerAddress {
-                    address: header_end..next,
+        let request = match Request::parse_from_bytes(&buffer[header_end..header_end+header.length]) {
+                Ok(res) => res,
+                Err(err) => {
+                    println!("Error decoding protocol message");
+                    println!("|── Protobuf error was: {:?}", err.to_string());
+                    //println!("|── Bytes were: {:?}", arr);
+                    panic!();
                 },
-                buffer,
-            },
-            RequestType::GetString => WholeRequest {
-                callback_index: header.callback_index,
-                request_type: RequestRanges::Get {
-                    key: header_end..next,
-                },
-                buffer,
-            },
-            RequestType::SetString => {
-                let key_start = header_end + MESSAGE_LENGTH_FIELD_LENGTH;
-                let key_length =
-                    (&buffer[header_end..key_start]).read_u32::<LittleEndian>()? as usize;
-                let key_end = key_start + key_length;
-                WholeRequest {
-                    callback_index: header.callback_index,
-                    request_type: RequestRanges::Set {
-                        key: key_start..key_end,
-                        value: key_end..next,
-                    },
-                    buffer,
-                }
-            }
         };
+        let request = WholeRequest{request};
         Ok(RequestState::Complete {
             request,
             cursor_next: next,

@@ -13,6 +13,30 @@ def get_random_string(length):
 
 
 @pytest.mark.asyncio
+class TestProtobufClient:
+    async def test_set_get(self, async_protobuf_client):
+        key = get_random_string(5)
+        value = datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
+        assert await async_protobuf_client.set(key, value) == "OK"
+        assert await async_protobuf_client.get(key) == value
+        
+    @pytest.mark.parametrize("value_size", [100, 2**16])
+    async def test_concurrent_tasks(self, async_protobuf_client, value_size):
+        num_of_concurrent_tasks = 20
+        running_tasks = set()
+
+        async def exec_command(i):
+            value = get_random_string(value_size)
+            await async_protobuf_client.set(str(i), value)
+            assert await async_protobuf_client.get(str(i)) == value
+
+        for i in range(num_of_concurrent_tasks):
+            task = asyncio.create_task(exec_command(i))
+            running_tasks.add(task)
+            task.add_done_callback(running_tasks.discard)
+        await asyncio.gather(*(list(running_tasks)))
+        
+@pytest.mark.asyncio
 class TestSocketClient:
     async def test_set_get(self, async_socket_client):
         key = get_random_string(5)

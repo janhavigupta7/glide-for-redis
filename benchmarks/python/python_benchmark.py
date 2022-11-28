@@ -1,3 +1,6 @@
+import sys
+sys.path.append("/home/ubuntu/babushka/benchmarks/.env/lib/python3.10/site-packages/")
+sys.path.append("/home/ubuntu/babushka/benchmarks/python/python") # TODO: fix it
 import argparse
 import asyncio
 import functools
@@ -7,11 +10,11 @@ import time
 from enum import Enum
 from statistics import mean
 
-import aioredis
+# import aioredis
 import numpy as np
 import redis.asyncio as redispy
 import uvloop
-from pybushka import ClientConfiguration, RedisAsyncFFIClient, RedisAsyncSocketClient
+from pybushka import ClientConfiguration, RedisAsyncFFIClient, RedisAsyncSocketClient, RedisAsyncProtobufClient
 
 
 class ChosenAction(Enum):
@@ -252,11 +255,23 @@ async def main(
         or clients_to_run == "babushka"
     ):
         # Babushka Socket
+        # config = ClientConfiguration(host=host, port=PORT)
+        # babushka_socket_client = await RedisAsyncSocketClient.create(config)
+        # await run_client(
+        #     babushka_socket_client,
+        #     "babushka-socket",
+        #     event_loop_name,
+        #     total_commands,
+        #     num_of_concurrent_tasks,
+        #     data_size,
+        # )
+        
+        # Babushka Protobuf
         config = ClientConfiguration(host=host, port=PORT)
-        babushka_socket_client = await RedisAsyncSocketClient.create(config)
+        babushka_protobuf_client = await RedisAsyncProtobufClient.create(config)
         await run_client(
-            babushka_socket_client,
-            "babushka-socket",
+            babushka_protobuf_client,
+            "babushka-protobuf",
             event_loop_name,
             total_commands,
             num_of_concurrent_tasks,
@@ -291,18 +306,18 @@ if __name__ == "__main__":
             )
         )
 
-    uvloop.install()
+    # uvloop.install()
 
-    for (data_size, num_of_concurrent_tasks) in product_of_arguments:
-        asyncio.run(
-            main(
-                "uvloop",
-                number_of_iterations(num_of_concurrent_tasks),
-                num_of_concurrent_tasks,
-                data_size,
-                clients_to_run,
-                host,
-            )
-        )
+    # for (data_size, num_of_concurrent_tasks) in product_of_arguments:
+    #     asyncio.run(
+    #         main(
+    #             "uvloop",
+    #             number_of_iterations(num_of_concurrent_tasks),
+    #             num_of_concurrent_tasks,
+    #             data_size,
+    #             clients_to_run,
+    #             host,
+    #         )
+    #     )
 
     process_results()

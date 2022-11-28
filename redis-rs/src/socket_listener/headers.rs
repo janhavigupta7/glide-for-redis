@@ -1,7 +1,10 @@
 use lifeguard::RcRecycled;
 use num_derive::{FromPrimitive, ToPrimitive};
 use std::{ops::Range, rc::Rc};
+include!("/home/ubuntu/babushka/rust/babushkapb/target/debug/build/babushkapb-e7aaa0da8386a3de/out/proto/mod.rs"); // TODO: fix it
 
+use babushkaproto::Request;
+use protobuf::Message;
 /// Length of the message field in the request & response.
 pub const MESSAGE_LENGTH_FIELD_LENGTH: usize = 4;
 /// Length of the callback index field in the request & response.
@@ -25,7 +28,7 @@ pub const CALLBACK_INDEX_END: usize = MESSAGE_LENGTH_END + CALLBACK_INDEX_FIELD_
 /// The index at the end of the type field.
 pub const TYPE_END: usize = CALLBACK_INDEX_END + TYPE_FIELD_LENGTH;
 /// The length of the header.
-pub const HEADER_END: usize = TYPE_END;
+pub const HEADER_END: usize = MESSAGE_LENGTH_END;
 /// The length of the header, when it contains a second argument.
 pub const HEADER_WITH_KEY_LENGTH_END: usize = HEADER_END + MESSAGE_LENGTH_FIELD_LENGTH;
 
@@ -56,14 +59,18 @@ pub enum ResponseType {
 #[derive(PartialEq, Debug, Clone)]
 pub(super) enum RequestRanges {
     ServerAddress {
-        address: Range<usize>,
+        // address: Range<usize>,
+        address: Vec<u8>,
     },
     Get {
-        key: Range<usize>,
+        // key: Range<usize>,
+        key: Vec<u8>,
     },
     Set {
-        key: Range<usize>,
-        value: Range<usize>,
+    //     key: Range<usize>,
+    //     value: Range<usize>,
+        key: Vec<u8>,
+        value: Vec<u8>,
     },
 }
 
@@ -73,9 +80,13 @@ pub(super) type Buffer = RcRecycled<Vec<u8>>;
 pub(super) type SharedBuffer = Rc<Buffer>;
 
 /// The full parsed information for a request from the client's caller.
+// pub(super) struct WholeRequest {
+//     pub(super) callback_index: u32,
+//     pub(super) request_type: RequestRanges,
+//     /// A buffer containing the original request, and all the non-structured values that weren't copied.
+//     pub(super) buffer: SharedBuffer,
+// }
+/// The full parsed information for a request from the client's caller.
 pub(super) struct WholeRequest {
-    pub(super) callback_index: u32,
-    pub(super) request_type: RequestRanges,
-    /// A buffer containing the original request, and all the non-structured values that weren't copied.
-    pub(super) buffer: SharedBuffer,
+    pub(super) request: Request,
 }
