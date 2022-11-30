@@ -170,18 +170,10 @@ async fn write_command_reply(
     -> RedisResult<()>  {
         let mut out_msg = CommandReply::new();
         out_msg.callback_idx = callback_index;
-        match response {
-            Some(res) => { 
-                if is_error {
-                    //println!("Rust: writing reply, callback_index={}, error={}", callback_index, std::str::from_utf8(&res).unwrap());
-                    out_msg.error = res;
-                } else {
-                    //println!("Rust: writing reply, callback_idx: {}, response={}", callback_index, std::str::from_utf8(&res).unwrap());
-
-                    out_msg.response = res;
-                }
-            },
-            None => {},
+        if is_error {
+            out_msg.error = response;
+        } else {
+            out_msg.response = response;
         };
         let msg_length = out_msg.compute_size();
         // println!("out msg={}, msg_length={}", protobuf::text_format::print_to_string(&out_msg), msg_length);

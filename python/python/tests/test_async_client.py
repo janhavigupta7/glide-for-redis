@@ -17,7 +17,7 @@ class TestProtobufClient:
     async def test_set_get(self, async_protobuf_client):
         key = get_random_string(5)
         value = datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
-        assert await async_protobuf_client.set(key, value) == "OK"
+        assert await async_protobuf_client.set(key, value) is None
         assert await async_protobuf_client.get(key) == value
         
     @pytest.mark.parametrize("value_size", [100, 2**16])

@@ -1,7 +1,7 @@
 use lifeguard::RcRecycled;
 use num_derive::{FromPrimitive, ToPrimitive};
 use std::{ops::Range, rc::Rc};
-include!("/home/ubuntu/babushka/rust/babushkapb/target/debug/build/babushkapb-e7aaa0da8386a3de/out/proto/mod.rs"); // TODO: fix it
+include!("/home/ubuntu/babushka/rust/babushkapb/target/debug/build/babushkapb-f0a7f5219a3d6e81/out/proto/mod.rs"); // TODO: fix it
 
 use babushkaproto::Request;
 use protobuf::Message;

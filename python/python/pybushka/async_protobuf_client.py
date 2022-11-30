@@ -153,8 +153,10 @@ class RedisAsyncProtobufClient(CoreCommands):
         if not res_future:
             self.close("Got wrong callback index: {}", response.callback_idx)
         else:
-            if response.error:
+            if response.HasField("error"):
                 res_future.set_exception(response.error)
-            else:
+            elif response.HasField("response"):
                 res_future.set_result(response.response)
+            else:
+                res_future.set_result(None)
             self._availableCallbackIndexes.add(response.callback_idx)

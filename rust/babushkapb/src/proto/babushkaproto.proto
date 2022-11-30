@@ -3,8 +3,8 @@ package babushkaproto;
 
 message CommandReply {
     uint32 callback_idx = 1;
-    string response = 2;
-    string error = 3;
+    optional string response = 2;
+    optional string error = 3;
 }
 
 message Request {
