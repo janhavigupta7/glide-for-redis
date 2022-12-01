@@ -1,5 +1,7 @@
 import { BabushkaInternal } from "../";
 import * as net from "net";
+var protobuf = require("protobufjs");
+protobuf.load("/home/ubuntu/babushka/rust/babushkapb/src/proto/babushkaproto.proto");
 const {
     StartSocketConnection,
     HEADER_LENGTH_IN_BYTES,

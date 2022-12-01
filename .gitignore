@@ -21,3 +21,5 @@ benchmarks/results
 
 yarn.lock
 package-lock.json
+
+*.zip
