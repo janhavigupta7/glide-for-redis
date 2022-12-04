@@ -53,6 +53,7 @@ function runNodeBenchmark(){
   cd ${BENCH_FOLDER}/node
   npm install
   npx tsc
+  cp /home/ubuntu/babushka/node/src/compiled.js /home/ubuntu/babushka/node/build-ts/src/ # TODO: fix it
   npm run bench -- --resultsFile=../$1 --dataSize $2 --concurrentTasks $concurrentTasks --clients $chosenClients --host $host
 }
 

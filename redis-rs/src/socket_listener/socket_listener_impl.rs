@@ -280,7 +280,6 @@ async fn write_error(
     response_type: ResponseType,
 ) {
     let err_str = err.to_string();
-    let error_bytes = err_str.as_bytes();
     write_command_reply(write_socket, write_lock, callback_index, Some(err_str.into()), pool, true).await.expect("Failed writing error to vec");
     
 }

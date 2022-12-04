@@ -210,7 +210,7 @@ async function main(
         );
         await run_client(
             babushka_socket_client,
-            "babushka socket",
+            "babushka protobuf",
             total_commands,
             num_of_concurrent_tasks,
             data_size,

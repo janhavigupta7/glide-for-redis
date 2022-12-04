@@ -237,7 +237,7 @@ fn write_to_socket(socket: &UnixStream, request_type: u32, callback_idx: u32, ar
     request.request_type = request_type;
     for arg in args.into_iter() {
         println!("pushing arg {:?}", arg);
-        request.arg.push(arg);
+        request.arg.push(arg.into());
     }
 
     let message_length = request.compute_size() as usize;
@@ -278,7 +278,7 @@ fn write_cmd_read_response(socket: &UnixStream, request_type: u32, callback_idx:
 }
 
 #[test]
-fn test_socket_handle_long_input() {
+fn test_socket_protobuf_set_get() {
     if is_tls_or_unix() {
         // TODO: delete after we'll support passing configurations to socket
         return;
@@ -299,8 +299,17 @@ fn test_socket_handle_long_input() {
     let response = write_cmd_read_response(&test_basics.socket, RequestType::SetString.to_u32().unwrap(), CALLBACK1_INDEX, vec![key.into(), value.clone().into()]);
     let response2 = write_cmd_read_response(&test_basics.socket, RequestType::GetString.to_u32().unwrap(), CALLBACK2_INDEX, vec![key.into()]);
     assert_eq!(response.response, None);
-    assert_eq!(response2.response, Some(value));
+    assert_eq!(response2.response, Some(value.into()));
+}
 
+// #[test]
+// fn test_socket_handle_long_input() {
+//     if is_tls_or_unix() {
+//         // TODO: delete after we'll support passing configurations to socket
+//         return;
+//     }
+//     let mut test_basics = setup_test_basics();
+// 
     // buffer.clear();
     // buffer
     //     .write_u32::<LittleEndian>((HEADER_END + key.len()) as u32)
@@ -341,7 +350,7 @@ fn test_socket_handle_long_input() {
     //     ResponseType::String.to_u32().unwrap()
     // );
     // assert_eq!(&buffer[HEADER_END..VALUE_LENGTH + HEADER_END], value);
-}
+// }
 
 // This test starts multiple threads writing large inputs to a socket, and another thread that reads from the output socket and
 // verifies that the outputs match the inputs.
