@@ -8,9 +8,8 @@ from enum import Enum
 import aioredis
 import numpy as np
 import redis.asyncio as redispy
-import uvloop
 from statistics import mean
-from pybushka import ClientConfiguration, RedisAsyncFFIClient, RedisAsyncSocketClient
+from pybushka import ClientConfiguration, RedisAsyncFFIClient, RedisAsyncSocketClient, RedisAsyncGRPCClient
 
 
 class ChosenAction(Enum):
@@ -215,17 +214,6 @@ async def main(
             data_size,
         )
 
-        # AIORedis
-        aioredis_client = await aioredis.from_url(f"redis://{host}:{PORT}")
-        await run_client(
-            aioredis_client,
-            "aioredis",
-            event_loop_name,
-            total_commands,
-            num_of_concurrent_tasks,
-            data_size,
-        )
-
     if (
         clients_to_run == "all"
         or clients_to_run == "ffi"
@@ -259,6 +247,22 @@ async def main(
             num_of_concurrent_tasks,
             data_size,
         )
+    if (
+        clients_to_run == "all"
+        or clients_to_run == "grpc"
+        or clients_to_run == "babushka"
+    ):
+        # Babushka gRPC
+        config = ClientConfiguration(host=host, port=PORT)
+        babushka_socket_client = await RedisAsyncGRPCClient.create(config)
+        await run_client(
+            babushka_socket_client,
+            "babushka-grpc",
+            event_loop_name,
+            total_commands,
+            num_of_concurrent_tasks,
+            data_size,
+        )
 
 
 def number_of_iterations(num_of_concurrent_tasks):
@@ -280,20 +284,6 @@ if __name__ == "__main__":
         asyncio.run(
             main(
                 "asyncio",
-                number_of_iterations(num_of_concurrent_tasks),
-                num_of_concurrent_tasks,
-                data_size,
-                clients_to_run,
-                host,
-            )
-        )
-
-    uvloop.install()
-
-    for (data_size, num_of_concurrent_tasks) in product_of_arguments:
-        asyncio.run(
-            main(
-                "uvloop",
                 number_of_iterations(num_of_concurrent_tasks),
                 num_of_concurrent_tasks,
                 data_size,
