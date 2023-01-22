@@ -1,5 +1,5 @@
 use super::super::{AsyncCommands, RedisResult};
-use super::{headers::*, rotating_buffer::RotatingBuffer};
+use super::{headers_protobuf::*, rotating_buffer_protobuf::RotatingBuffer};
 use crate::aio::MultiplexedConnection;
 use crate::{Client, RedisError};
 use byteorder::{LittleEndian, WriteBytesExt};
@@ -23,7 +23,7 @@ use tokio::task;
 use ClosingReason::*;
 use PipeListeningResult::*;
 use protobuf::Message;
-use babushkaproto::{CommandReply, Request};
+use babushkaproto::{CommandReply, Request, NullResp, StrResponse};
 use num_traits::FromPrimitive;
 /// The socket file name
 pub const SOCKET_FILE_NAME: &str = "babushka-socket";
@@ -173,7 +173,15 @@ async fn write_command_reply(
         if is_error {
             out_msg.error = response;
         } else {
-            out_msg.response = response;
+            match response {
+                Some(res) => {
+                    let mut inner_res = StrResponse::new();
+                    inner_res.arg = res;
+                    out_msg.response = Some(babushkaproto::command_reply::Response::Resp1(inner_res));
+                },
+                None => out_msg.response = Some(babushkaproto::command_reply::Response::Resp2(NullResp::new())),
+            }
+            
         };
         let msg_length = out_msg.compute_size();
         // println!("out msg={}, msg_length={}", protobuf::text_format::print_to_string(&out_msg), msg_length);
@@ -554,12 +562,12 @@ async fn handle_signals() {
 ///
 /// # Arguments
 /// * `init_callback` - called when the socket listener fails to initialize, with the reason for the failure.
-pub fn start_socket_listener<InitCallback>(init_callback: InitCallback)
+pub fn start_socket_listener_protobuf<InitCallback>(init_callback: InitCallback)
 where
     InitCallback: FnOnce(Result<String, RedisError>) + Send + 'static,
 {
     thread::Builder::new()
-        .name("socket_listener_thread".to_string())
+        .name("socket_listener_thread_protobuf".to_string())
         .spawn(move || {
             let runtime = Builder::new_current_thread()
                 .enable_all()

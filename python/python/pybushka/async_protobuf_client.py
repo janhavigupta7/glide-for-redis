@@ -14,6 +14,7 @@ from .pybushka import (
     PyRequestType,
     PyResponseType,
     start_socket_listener_external,
+    start_socket_listener_protobuf_external
 )
 
 HEADER_LEN = 4
@@ -41,7 +42,7 @@ class RedisAsyncProtobufClient(CoreCommands):
                 self.socket_path = socket_path
                 loop.call_soon_threadsafe(init_future.set_result, True)
         print("waiting for callback")
-        start_socket_listener_external(init_callback=init_callback)
+        start_socket_listener_protobuf_external(init_callback=init_callback)
 
         # Wait for the socket listener to complete its initialization
         await init_future
@@ -90,11 +91,17 @@ class RedisAsyncProtobufClient(CoreCommands):
     def _get_header_length(self, num_of_args: int) -> int:
         return HEADER_LENGTH_IN_BYTES + 4 * (num_of_args - 1)
 
-    async def execute_command(self, command_type, *args, **kwargs):
+    def _create_proto_request(self,callback_index, command_type, *args, **kwargs):
         request = Request()
+        request.callback_idx = callback_index
         request.request_type = int(command_type)
         request.arg[:] = [arg.encode('utf-8') for arg in args]
-        response_future = await self._write_to_socket(request)
+        return request.ByteSize(), request.SerializeToString()
+    
+    async def execute_command(self, command_type, *args, **kwargs):
+        callback_index = self._get_callback_index()
+        request_len, buffer = self._create_proto_request(callback_index, command_type, *args, **kwargs)
+        response_future = await self._write_to_socket(request_len, callback_index, buffer)
         # print(f"executing command type {request.request_type}, with args {request.arg}")
         await response_future
         return response_future.result()
@@ -117,15 +124,12 @@ class RedisAsyncProtobufClient(CoreCommands):
             return len(self._availableFutures) + 1
         return self._availableCallbackIndexes.pop()
 
-    async def _write_to_socket(self, request):
+    async def _write_to_socket(self, request_len, callback_index, buffer):
         async with self._lock:
-            callback_index = self._get_callback_index()
-            request.callback_idx = callback_index
-            request_len = request.ByteSize()
             # Write the header to the buffer
             self._write_int_to_buffer(request_len, 0)
             # Write the request to the buffer
-            self.write_buffer[HEADER_LEN:request_len+HEADER_LEN] = request.SerializeToString()
+            self.write_buffer[HEADER_LEN:request_len+HEADER_LEN] = buffer
             # Create a response future for this reqest and add it to the available futures map
             response_future = asyncio.Future()
             self._writer.write(self.write_buffer[0:request_len+HEADER_LEN])

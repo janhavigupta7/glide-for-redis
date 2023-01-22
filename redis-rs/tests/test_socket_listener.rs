@@ -5,11 +5,11 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use ntest::timeout;
 use num_traits::{FromPrimitive, ToPrimitive};
 use rand::{distributions::Standard, thread_rng, Rng};
-use redis::socket_listener::headers::{
+use redis::socket_listener::headers_protobuf::{
     RequestType, ResponseType, CALLBACK_INDEX_END, HEADER_END, MESSAGE_LENGTH_END,
     MESSAGE_LENGTH_FIELD_LENGTH, TYPE_END,
 };
-use redis::socket_listener::*;
+use redis::socket_listener::socket_listener_impl_protobuf::*;
 use rsevents::{Awaitable, EventState, ManualResetEvent};
 use std::io::prelude::*;
 use std::sync::{Arc, Mutex};
@@ -39,7 +39,7 @@ fn setup_test_basics() -> TestBasics {
     let cloned_state = socket_listener_state.clone();
     let path_arc = Arc::new(std::sync::Mutex::new(None));
     let path_arc_clone = Arc::clone(&path_arc);
-    start_socket_listener(move |res| {
+    start_socket_listener_protobuf(move |res| {
         let path: String = res.expect("Failed to initialize the socket listener");
         let mut path_arc_clone = path_arc_clone.lock().unwrap();
         *path_arc_clone = Some(path);

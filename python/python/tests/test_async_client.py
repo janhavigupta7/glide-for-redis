@@ -67,10 +67,10 @@ class TestFlatbuffersClient:
         assert parsed_response.Error() == None
         builder.Clear
 
-    async def test_set_get(self, async_flatbuffers_client):
+    async def test_set_get_flat(self, async_flatbuffers_client):
         key = get_random_string(5)
-        value = datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
-        value = 'b' * 1000000
+        #value = datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
+        value = 'b' * 10000000
         #print(key, value)
         assert await async_flatbuffers_client.set(key, value) is None
         assert await async_flatbuffers_client.get(key) == value
@@ -78,8 +78,8 @@ class TestFlatbuffersClient:
     async def test_set_get_redispy(self):
         r = await redispy.Redis(host="localhost", port=6379, decode_responses=True)
         key = get_random_string(5)
-        value = datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
-        value = 'b' * 1000000
+        #value = datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
+        value = 'b' * 10000000
         #print(value)
         assert await r.set(key, value) is True
         assert await r.get(key) == value
@@ -104,61 +104,69 @@ class TestFlatbuffersClient:
             running_tasks.add(task)
             task.add_done_callback(running_tasks.discard)
         await asyncio.gather(*(list(running_tasks)))
-        #print("2")
-# sys.path.append("/home/ubuntu/babushka/python/PATH")
-# from babushkaproto_pb2 import Response as babushkaResponse
-# from babushkaproto_pb2 import CommandReply, StrResponse, RepStrResponse
-# from google.protobuf.json_format import MessageToDict
-# from protobuf_to_dict import protobuf_to_dict
-# from protobuf_decoder.protobuf_decoder import Parser
-# @pytest.mark.asyncio
-# class TestProtobufClient:
-#     def test_protobuf(self):
-#         rep1 = RepStrResponse()
-#         rep1.arg.extend(["bar1", "bar2", "bar3"])
-#         print(type(rep1.arg))
-#         rep = CommandReply()
-#         rep.resp1.arg = "barbara"
-#         rep.callback_idx = 1
-#         #rep.resp1 = str_res
-#         print(MessageToDict(rep.resp1, preserving_proto_field_name=True).get("arg"))
-#         response = babushkaResponse()
-#         slot = response.slot.add()
-#         slot.start_range = 0
-#         slot.end_range = 10
-#         node1 = slot.node.add()
-#         node1.address = "localhost1"
-#         node2 = slot.node.add()
-#         node2.address = "localhost2"
-#         ser = response.SerializeToString()
-#         res = babushkaResponse().FromString(ser)
-#         dict_obj = MessageToDict(res)
-#         res = protobuf_to_dict(res)
-#         print(type(res))
-#         print(res)
-#         print(type(dict_obj))
-#         print(dict_obj)
-#         # print(type(res.slot))
-#         # print(res.slot)
-#         # print(type(list(res.slot)))
+
+sys.path.append("/home/ubuntu/babushka/python/PATH")
+from babushkaproto_pb2 import Response as babushkaResponse
+from babushkaproto_pb2 import CommandReply, StrResponse, RepStrResponse
+from google.protobuf.json_format import MessageToDict
+from protobuf_to_dict import protobuf_to_dict
+from protobuf_decoder.protobuf_decoder import Parser
+@pytest.mark.asyncio
+class TestProtobufClient:
+    def test_protobuf(self):
+        rep1 = RepStrResponse()
+        rep1.arg.extend(["bar1", "bar2", "bar3"])
+        print(type(rep1.arg))
+        rep = CommandReply()
+        rep.resp1.arg = "barbara"
+        rep.callback_idx = 1
+        #rep.resp1 = str_res
+        print(MessageToDict(rep.resp1, preserving_proto_field_name=True).get("arg"))
+        response = babushkaResponse()
+        slot = response.slot.add()
+        slot.start_range = 0
+        slot.end_range = 10
+        node1 = slot.node.add()
+        node1.address = "localhost1"
+        node2 = slot.node.add()
+        node2.address = "localhost2"
+        ser = response.SerializeToString()
+        res = babushkaResponse().FromString(ser)
+        dict_obj = MessageToDict(res)
+        res = protobuf_to_dict(res)
+        print(type(res))
+        print(res)
+        print(type(dict_obj))
+        print(dict_obj)
+        # print(type(res.slot))
+        # print(res.slot)
+        # print(type(list(res.slot)))
         
+    async def test_set_get(self, async_protobuf_client):
+        key = get_random_string(5)
+        #value = datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
+        value = 'b' * 10000000
+        #print(key, value)
+        assert await async_protobuf_client.set(key, value) is None
+        assert await async_protobuf_client.get(key) == value
 
+    @pytest.mark.parametrize("value_size", [100])
+    async def test_concurrent_tasks(self, async_protobuf_client, value_size):
+        num_of_concurrent_tasks = 20
+        running_tasks = set()
 
-    # @pytest.mark.parametrize("value_size", [100, 2**16])
-    # async def test_concurrent_tasks(self, async_protobuf_client, value_size):
-    #     num_of_concurrent_tasks = 20
-    #     running_tasks = set()
+        async def exec_command(i):
+            for j in range(100):
+                key = str(i) + str(j)
+                value = get_random_string(value_size)
+                await async_protobuf_client.set(key, value)
+                assert await async_protobuf_client.get(key) == value
 
-    #     async def exec_command(i):
-    #         value = get_random_string(value_size)
-    #         await async_protobuf_client.set(str(i), value)
-    #         assert await async_protobuf_client.get(str(i)) == value
-
-    #     for i in range(num_of_concurrent_tasks):
-    #         task = asyncio.create_task(exec_command(i))
-    #         running_tasks.add(task)
-    #         task.add_done_callback(running_tasks.discard)
-    #     await asyncio.gather(*(list(running_tasks)))
+        for i in range(num_of_concurrent_tasks):
+            task = asyncio.create_task(exec_command(i))
+            running_tasks.add(task)
+            task.add_done_callback(running_tasks.discard)
+        await asyncio.gather(*(list(running_tasks)))
         
 @pytest.mark.asyncio
 class TestSocketClient:

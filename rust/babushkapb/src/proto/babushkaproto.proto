@@ -28,10 +28,10 @@ message CommandReply {
 }
 
 message RepStrResponse {
-    repeated string arg = 3;
+    repeated string arg = 1;
 }
 message StrResponse {
-    string arg = 3;
+    string arg = 1;
 }
 message Node {
     string address = 1;
