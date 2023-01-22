@@ -1,7 +1,8 @@
 hiredis
 uvloop
 numpy
-
+flatbuffers
+google
 
 # aioredis
 aioredis>=1.1.0

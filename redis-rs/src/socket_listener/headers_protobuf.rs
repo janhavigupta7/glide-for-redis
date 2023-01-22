@@ -1,19 +1,10 @@
-use lifeguard::{RcRecycled, Pool};
+use lifeguard::RcRecycled;
 use num_derive::{FromPrimitive, ToPrimitive};
 use std::{ops::Range, rc::Rc};
+include!("/home/ubuntu/babushka/rust/babushkapb/target/debug/build/babushkapb-f0a7f5219a3d6e81/out/proto/mod.rs"); // TODO: fix it
 
-extern crate flatbuffers;
- 
-// import the generated code
-#[allow(dead_code, unused_imports)]
-#[path = "./babushka_request_generated.rs"]
-mod babushka_request_generated;
-pub use babushka_request_generated::request::babushka::{Request, RequestArgs, root_as_request};
-#[path = "./babushka_response_generated.rs"]
-mod babushka_response_generated;
-pub use babushka_response_generated::response::babushka::{Response, ResponseArgs, root_as_response};
-
-
+use babushkaproto::Request;
+use protobuf::Message;
 /// Length of the message field in the request & response.
 pub const MESSAGE_LENGTH_FIELD_LENGTH: usize = 4;
 /// Length of the callback index field in the request & response.
@@ -87,7 +78,6 @@ pub(super) type Buffer = RcRecycled<Vec<u8>>;
 /// Buffer needs to be wrapped in Rc, because RcRecycled's clone implementation
 /// involves copying the array.
 pub(super) type SharedBuffer = Rc<Buffer>;
-pub(super) type BuilderPool<'a> = Rc<Pool<Vec<flatbuffers::FlatBufferBuilder<'a>>>>;
 
 /// The full parsed information for a request from the client's caller.
 // pub(super) struct WholeRequest {
@@ -98,8 +88,5 @@ pub(super) type BuilderPool<'a> = Rc<Pool<Vec<flatbuffers::FlatBufferBuilder<'a>
 // }
 /// The full parsed information for a request from the client's caller.
 pub(super) struct WholeRequest {
-    pub(super) buffer: SharedBuffer,
-    pub(super) request_start: usize,
-    pub(super) request_end: usize,
-
+    pub(super) request: Request,
 }

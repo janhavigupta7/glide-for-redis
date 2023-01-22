@@ -1,13 +1,14 @@
 import asyncio
 from typing import Awaitable, Optional, Type
 import sys
-sys.path.append("/home/ubuntu/babushka/python/PATH")
-from babushkaproto_pb2 import CommandReply, Request
+sys.path.append("/home/ubuntu/babushka/python/python/pybushka")
 import async_timeout
 from pybushka.commands.core import CoreCommands
 from pybushka.config import ClientConfiguration
 from pybushka.utils import to_url
-from google.protobuf.json_format import MessageToDict
+import flatbuffers
+import Request.Babushka.Request
+import Response.Babushka.Response
 
 from .pybushka import (
     HEADER_LENGTH_IN_BYTES,
@@ -18,16 +19,17 @@ from .pybushka import (
 
 HEADER_LEN = 4
 
-class RedisAsyncProtobufClient(CoreCommands):
+class RedisAsyncFlatbuffersClient(CoreCommands):
     @classmethod
     async def create(cls, config: ClientConfiguration = None):
         config = config or ClientConfiguration.get_default_config()
-        self = RedisAsyncProtobufClient()
+        self = RedisAsyncFlatbuffersClient()
         self.config: Type[ClientConfiguration] = config
         self.socket_connect_timeout = config.config_args.get("connection_timeout")
         self.write_buffer: bytearray = bytearray(1024)
         self._availableFutures: dict[int, Awaitable[Optional[str]]] = {}
         self._availableCallbackIndexes: set[int] = set()
+        self._availableBuilders = set()
         self._lock = asyncio.Lock()
         init_future = asyncio.Future()
         loop = asyncio.get_event_loop()
@@ -40,7 +42,6 @@ class RedisAsyncProtobufClient(CoreCommands):
                 # Received socket path
                 self.socket_path = socket_path
                 loop.call_soon_threadsafe(init_future.set_result, True)
-        print("waiting for callback")
         start_socket_listener_external(init_callback=init_callback)
 
         # Wait for the socket listener to complete its initialization
@@ -90,11 +91,30 @@ class RedisAsyncProtobufClient(CoreCommands):
     def _get_header_length(self, num_of_args: int) -> int:
         return HEADER_LENGTH_IN_BYTES + 4 * (num_of_args - 1)
 
+    def _create_fbs_request(self, callback_index, command_type, *args, **kwargs):
+        # Use a `FlatBufferBuilder`, which will be used to create our request' FlatBuffers.
+        builder = flatbuffers.Builder(1024)
+        args_bytes = []
+        for arg in args:
+            arg_bytes = builder.CreateSharedString(arg)
+            args_bytes.append(arg_bytes)
+        Request.Babushka.Request.RequestStartArgVector(builder, len(args))
+        for arg_b in reversed(args_bytes):
+            builder.PrependSOffsetTRelative(arg_b)
+        arg_vec = builder.EndVector(len(args))
+        Request.Babushka.Request.RequestStart(builder)
+        Request.Babushka.Request.RequestAddArg(builder, arg_vec)
+        Request.Babushka.Request.RequestAddRequestType(builder, int(command_type))
+        Request.Babushka.Request.RequestAddCallbackIdx(builder, callback_index)
+        res = Request.Babushka.Request.RequestEnd(builder)
+        builder.Finish(res)
+        request_buf = builder.Output()  # Of type `bytearray`
+        return request_buf
+    
     async def execute_command(self, command_type, *args, **kwargs):
-        request = Request()
-        request.request_type = int(command_type)
-        request.arg[:] = [arg.encode('utf-8') for arg in args]
-        response_future = await self._write_to_socket(request)
+        callback_index = self._get_callback_index()
+        request_buf = self._create_fbs_request(callback_index, command_type, *args, **kwargs)
+        response_future = await self._write_to_socket(request_buf, callback_index)
         # print(f"executing command type {request.request_type}, with args {request.arg}")
         await response_future
         return response_future.result()
@@ -116,16 +136,20 @@ class RedisAsyncProtobufClient(CoreCommands):
             # Set is empty
             return len(self._availableFutures) + 1
         return self._availableCallbackIndexes.pop()
+    
+    def _get_fbs_builder(self):
+        if not self._availableBuilders:
+            # Set is empty
+            return flatbuffers.Builder(1024)
+        return self._availableBuilders.pop()
 
-    async def _write_to_socket(self, request):
+    async def _write_to_socket(self, request, callback_index):
         async with self._lock:
-            callback_index = self._get_callback_index()
-            request.callback_idx = callback_index
-            request_len = request.ByteSize()
+            request_len = len(request)
             # Write the header to the buffer
             self._write_int_to_buffer(request_len, 0)
             # Write the request to the buffer
-            self.write_buffer[HEADER_LEN:request_len+HEADER_LEN] = request.SerializeToString()
+            self.write_buffer[HEADER_LEN:request_len+HEADER_LEN] = request
             # Create a response future for this reqest and add it to the available futures map
             response_future = asyncio.Future()
             self._writer.write(self.write_buffer[0:request_len+HEADER_LEN])
@@ -147,17 +171,17 @@ class RedisAsyncProtobufClient(CoreCommands):
         msg_length = int.from_bytes(data[0:HEADER_LEN], "little")
         if msg_length > 0:
             message = await self._reader.readexactly(msg_length)
-            response = CommandReply().FromString(bytes(message))
+            response = Response.Babushka.Response.Response.GetRootAs(message, 0)
         else:
             raise Exception("got message with size 0")
-        res_future = self._availableFutures.get(response.callback_idx)
+        res_future = self._availableFutures.get(response.CallbackIdx())
         if not res_future:
-            self.close("Got wrong callback index: {}", response.callback_idx)
+            self.close("Got wrong callback index: {}", response.CallbackIdx())
         else:
-            if response.HasField("error"):
-                res_future.set_exception(response.error)
-            elif response.HasField("resp1"):
-                res_future.set_result(MessageToDict(response.resp1, preserving_proto_field_name=True).get("arg"))
+            if response.Error() is not None:
+                res_future.set_exception(response.Error())
+            elif response.Response() is not None:
+                res_future.set_result(response.Response().decode())
             else:
                 res_future.set_result(None)
-            self._availableCallbackIndexes.add(response.callback_idx)
+            self._availableCallbackIndexes.add(response.CallbackIdx())

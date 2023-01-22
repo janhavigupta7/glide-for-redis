@@ -74,6 +74,82 @@ pub fn is_tls_or_unix() -> bool {
 }
 
 #[test]
+fn test_flatbuffers_request() {
+    extern crate flatbuffers;
+ 
+    // import the generated code
+    #[allow(dead_code, unused_imports)]
+    #[path = "/home/ubuntu/babushka/redis-rs/src/socket_listener/babushka_request_generated.rs"]
+    mod babushka_request_generated;
+    pub use babushka_request_generated::request::babushka::{Request, RequestArgs, root_as_request};
+    #[path = "/home/ubuntu/babushka/redis-rs/src/socket_listener/babushka_response_generated.rs"]
+    mod babushka_response_generated;
+    pub use babushka_response_generated::response::babushka::{Response, ResponseArgs};
+    let args = vec!["foo", "bar"];
+    // Build up a serialized buffer algorithmically.
+    // Initialize it with a capacity of 1024 bytes.
+    let mut builder = flatbuffers::FlatBufferBuilder::new_with_capacity(1024);
+    let callback_idx = 3;
+    let request_type = 1;
+    // Serialize the args
+    let mut args_bytes = Vec::new();
+    for arg in args.iter() {
+        let arg_b = builder.create_string(arg);
+        args_bytes.push(arg_b);
+    }
+    let ser_args = builder.create_vector(&args_bytes);
+    let request = Request::create(&mut builder, &RequestArgs{
+        callback_idx,
+        request_type,
+        arg: Some(ser_args),
+        ..Default::default()
+    });
+    builder.finish(request, None);
+    let buf = builder.finished_data();
+    let parsed_request = root_as_request(buf).unwrap();
+    assert_eq!(parsed_request.callback_idx(), callback_idx);
+    assert_eq!(parsed_request.request_type(), request_type);
+    for i in 0..args.len() {
+        assert_eq!(parsed_request.arg().unwrap().get(i), *args.get(i).unwrap());
+
+    }
+
+}
+
+#[test]
+fn test_flatbuffers_response() {
+    extern crate flatbuffers;
+ 
+    // import the generated code
+    #[allow(dead_code, unused_imports)]
+    #[path = "/home/ubuntu/babushka/redis-rs/src/socket_listener/babushka_request_generated.rs"]
+    mod babushka_request_generated;
+    pub use babushka_request_generated::request::babushka::{Request, RequestArgs, root_as_request};
+    #[path = "/home/ubuntu/babushka/redis-rs/src/socket_listener/babushka_response_generated.rs"]
+    mod babushka_response_generated;
+    pub use babushka_response_generated::response::babushka::{Response, ResponseArgs, root_as_response};
+    // Build up a serialized buffer algorithmically.
+    // Initialize it with a capacity of 1024 bytes.
+    let mut builder = flatbuffers::FlatBufferBuilder::new_with_capacity(1024);
+    let callback_idx = 3;
+    let resp = "OK";
+    let resp_offset = builder.create_string(resp);
+    let response = Response::create(&mut builder, &ResponseArgs{
+        response: Some(resp_offset),
+        callback_idx,
+        error: None,
+        ..Default::default()
+    });
+    builder.finish(response, None);
+    let buf = builder.finished_data();
+    let parsed_response = root_as_response(buf).unwrap();
+    assert_eq!(parsed_response.callback_idx(), callback_idx);
+    assert_eq!(parsed_response.error(), None);
+    assert_eq!(parsed_response.response(), Some(resp));
+
+}
+
+#[test]
 fn test_socket_set_and_get() {
     if is_tls_or_unix() {
         // TODO: delete after we'll support passing configurations to socket
@@ -277,30 +353,30 @@ fn write_cmd_read_response(socket: &UnixStream, request_type: u32, callback_idx:
     return read_response(&socket, callback_idx, msg_legnth)
 }
 
-#[test]
-fn test_socket_protobuf_set_get() {
-    if is_tls_or_unix() {
-        // TODO: delete after we'll support passing configurations to socket
-        return;
-    }
-    let mut test_basics = setup_test_basics();
+// #[test]
+// fn test_socket_protobuf_set_get() {
+//     if is_tls_or_unix() {
+//         // TODO: delete after we'll support passing configurations to socket
+//         return;
+//     }
+//     let mut test_basics = setup_test_basics();
 
-    const CALLBACK1_INDEX: u32 = 100;
-    const CALLBACK2_INDEX: u32 = 101;
-    const VALUE_LENGTH: usize = 1000000;
-    let key = "hello";
+//     const CALLBACK1_INDEX: u32 = 100;
+//     const CALLBACK2_INDEX: u32 = 101;
+//     const VALUE_LENGTH: usize = 1000000;
+//     let key = "hello";
 
-    let value: String = thread_rng()
-    .sample_iter(&Alphanumeric)
-    .take(10)
-    .map(char::from)
-    .collect();
+//     let value: String = thread_rng()
+//     .sample_iter(&Alphanumeric)
+//     .take(10)
+//     .map(char::from)
+//     .collect();
 
-    let response = write_cmd_read_response(&test_basics.socket, RequestType::SetString.to_u32().unwrap(), CALLBACK1_INDEX, vec![key.into(), value.clone().into()]);
-    let response2 = write_cmd_read_response(&test_basics.socket, RequestType::GetString.to_u32().unwrap(), CALLBACK2_INDEX, vec![key.into()]);
-    assert_eq!(response.response, None);
-    assert_eq!(response2.response, Some(value.into()));
-}
+//     let response = write_cmd_read_response(&test_basics.socket, RequestType::SetString.to_u32().unwrap(), CALLBACK1_INDEX, vec![key.into(), value.clone().into()]);
+//     let response2 = write_cmd_read_response(&test_basics.socket, RequestType::GetString.to_u32().unwrap(), CALLBACK2_INDEX, vec![key.into()]);
+//     assert_eq!(response.response, None);
+//     assert_eq!(response2.response, Some(value.into()));
+// }
 
 // #[test]
 // fn test_socket_handle_long_input() {

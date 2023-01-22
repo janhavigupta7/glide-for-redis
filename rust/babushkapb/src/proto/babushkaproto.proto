@@ -1,10 +1,55 @@
 syntax = "proto3";
 package babushkaproto;
 
+
+
+message Response {
+    message Node {
+        string address = 1;
+    }
+    
+    message SlotRange {
+        uint32 start_range = 1;
+        uint32 end_range = 2;
+        repeated Node node = 3;
+    }
+    repeated SlotRange slot = 1;
+}
+
+message NullResp {}
+
 message CommandReply {
     uint32 callback_idx = 1;
-    optional string response = 2;
-    optional string error = 3;
+    optional string error = 2;
+    oneof response {
+        StrResponse resp1 = 3;
+        NullResp resp2 = 4;
+    }
+}
+
+message RepStrResponse {
+    repeated string arg = 3;
+}
+message StrResponse {
+    string arg = 3;
+}
+message Node {
+    string address = 1;
+    uint32 port = 2;
+    string node_id = 3;
+    string hostname = 4;
+}
+
+message Slot {
+    uint32 start_range = 1;
+    uint32 end_range = 2;
+    Node primary = 3;
+    repeated Node replicas = 4;
+}
+
+
+message clusterSlotsResp {
+    repeated Slot slots = 1;
 }
 
 message Request {

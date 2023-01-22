@@ -1,0 +1,10 @@
+namespace Response.Babushka;
+
+
+table Response {
+  callback_idx:uint;
+  error:string;
+  response:string;
+}
+
+root_type Response;

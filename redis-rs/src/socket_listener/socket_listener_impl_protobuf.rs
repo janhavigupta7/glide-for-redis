@@ -23,19 +23,15 @@ use tokio::task;
 use ClosingReason::*;
 use PipeListeningResult::*;
 use protobuf::Message;
-use flatbuffers_pool::{FlatBufferBuilderPool, FlatBufferBuilderLocalPool};
-
-//use babushkaproto::{CommandReply, Request, NullResp, StrResponse};
+use babushkaproto::{CommandReply, Request};
 use num_traits::FromPrimitive;
 /// The socket file name
 pub const SOCKET_FILE_NAME: &str = "babushka-socket";
-const INIT_POOL_SIZE: usize = 4_096;
-const MAX_POOL_SIZE: usize = 8_192;
-const BUFFER_CAPACITY: usize = 1_024;
+
 struct SocketListener {
     read_socket: Rc<UnixStream>,
     rotating_buffer: RotatingBuffer,
-    pool: Rc<Pool<Vec<u8>>>
+    pool: Rc<Pool<Vec<u8>>>,
 }
 
 enum PipeListeningResult {
@@ -142,7 +138,7 @@ fn write_response_header_to_vec(
     })?)?;
     Ok(())
 }
-//use crate::socket_listener::socket_listener_impl::babushkaproto::command_reply::Response;
+
 fn write_response_header(
     output_buffer: &mut [u8],
     callback_index: u32,
@@ -164,78 +160,45 @@ fn write_response_header(
     Ok(())
 }
 
-fn create_fbs_builder() -> flatbuffers::FlatBufferBuilder<'static>{
-    flatbuffers::FlatBufferBuilder::with_capacity(1024)
-}
-
 async fn write_command_reply(
     write_socket: Rc<UnixStream>,
     write_lock: Rc<Mutex<()>>,
     callback_index: u32,
     response: Option<String>,
     pool: &Pool<Vec<u8>>,
-    is_error: bool,
-    )
+    is_error: bool)
     -> RedisResult<()>  {
-        //let mut builder = FlatBufferBuilderPool::get();
-        //let bf_pool: object_pool::Pool<flatbuffers::FlatBufferBuilder> = object_pool::Pool::new(2, || flatbuffers::FlatBufferBuilder::with_capacity(1024));
-        //let mut builder = bf_pool.pull(create_fbs_builder);
-        let mut builder = flatbuffers::FlatBufferBuilder::with_capacity(1024); //TODO: change it to be reused
-        let out_msg: flatbuffers::WIPOffset<Response>;
+        let mut out_msg = CommandReply::new();
+        out_msg.callback_idx = callback_index;
         if is_error {
-            let resp_offset = builder.create_string(&response.unwrap());
-            out_msg = Response::create(&mut builder, &ResponseArgs{
-                response: None,
-                callback_idx: callback_index,
-                error: Some(resp_offset),
-                ..Default::default()
-            });
+            out_msg.error = response;
         } else {
-            match response {
-                Some(res) => {
-                    let resp_offset = builder.create_string(&res);
-                    out_msg = Response::create(&mut builder, &ResponseArgs{
-                        response: Some(resp_offset),
-                        callback_idx: callback_index,
-                        error: None,
-                        ..Default::default()
-                    });
-                },
-                None => {
-                    out_msg = Response::create(&mut builder, &ResponseArgs{
-                        response: None,
-                        callback_idx: callback_index,
-                        error: None,
-                        ..Default::default()
-                    });
-                }
-            }
+            out_msg.response = response;
         };
-        builder.finish(out_msg, None);
-        let buf = builder.finished_data();
-        let msg_length = buf.len();
+        let msg_length = out_msg.compute_size();
         // println!("out msg={}, msg_length={}", protobuf::text_format::print_to_string(&out_msg), msg_length);
-        let mut output_buffer = get_vec(pool, msg_length as usize + HEADER_END);
+        let mut output_buffer = get_vec(pool, msg_length as usize + 4);
         // Write header
         output_buffer.write_u32::<LittleEndian>(msg_length as u32)?;
         // Write response
-        output_buffer.extend_from_slice(&buf);
+        output_buffer.extend_from_slice(&out_msg.write_to_bytes().unwrap());
         write_to_output(&output_buffer, &write_socket, &write_lock).await;
         Ok(())
     }
 async fn send_set_request(
-    request: Request<'_>,
+    request: &Request,
     mut connection: MultiplexedConnection,
     write_socket: Rc<UnixStream>,
     write_lock: Rc<Mutex<()>>,
-    pool: &Pool<Vec<u8>>
+    pool: &Pool<Vec<u8>>,
 ) -> RedisResult<()> {
-    let key = request.arg().unwrap().get(0);
-    let value = request.arg().unwrap().get(1);
+    let args = request.arg.to_vec();
+    let key = &args[0];
+    let value = &args[1];
     connection
         .set(key, value)
         .await?;
-    write_command_reply(write_socket.clone(), write_lock.clone(), request.callback_idx(), None, pool, false).await?;
+    write_command_reply(write_socket.clone(), write_lock.clone(), request.callback_idx, None, pool, false).await?;
     Ok(())
 }
 
@@ -245,17 +208,17 @@ fn get_vec(pool: &Pool<Vec<u8>>, required_capacity: usize) -> RcRecycled<Vec<u8>
     vec.reserve(required_capacity);
     vec
 }
-use flatbuffers::{ForwardsUOffset, Vector, FlatBufferBuilder};
+
 async fn send_get_request(
-    request: Request<'_>,
+    request: &Request,
     mut connection: MultiplexedConnection,
     write_socket: Rc<UnixStream>,
     pool: &Pool<Vec<u8>>,
     write_lock: Rc<Mutex<()>>,
 ) -> RedisResult<()> {
-    let key = request.arg().unwrap().get(0);
+    let key = request.arg.first().unwrap();
     let result: Option<String> = connection.get(key).await?;
-    write_command_reply(write_socket, write_lock, request.callback_idx(), result, pool, false).await?;
+    write_command_reply(write_socket, write_lock, request.callback_idx, result, pool, false).await?;
     Ok(())
 }
 
@@ -265,20 +228,11 @@ fn handle_request(
     write_socket: Rc<UnixStream>,
     pool: Rc<Pool<Vec<u8>>>,
     write_lock: Rc<Mutex<()>>,
-    fbs_pool: Rc<FlatBufferBuilderLocalPool<'_>>
 ) {
     task::spawn_local(async move {
-        let request = match root_as_request(&whole_request.buffer[whole_request.request_start..whole_request.request_end]) {
-            Ok(res) => res,
-            Err(err) => {
-                println!("Error decoding protocol message");
-                println!("|── Protobuf error was: {:?}", err.to_string());
-                //println!("|── Bytes were: {:?}", arr);
-                panic!();
-            },
-        };
-        let result = match FromPrimitive::from_u32(request.request_type()) {
-            Some(RequestType::GetString) => {
+        let request = &whole_request.request;
+        let result = match FromPrimitive::from_u32(request.request_type.clone()).unwrap() {
+            RequestType::GetString => {
                 send_get_request(
                     request,
                     connection,
@@ -288,7 +242,7 @@ fn handle_request(
                 )
                 .await
             }
-            Some(RequestType::SetString) => {
+            RequestType::SetString => {
                 let res = send_set_request(
                     request,
                     connection,
@@ -299,15 +253,14 @@ fn handle_request(
                 .await;
                 res
             }
-            Some(RequestType::ServerAddress) => {
+            RequestType::ServerAddress => {
                 unreachable!("Server address can only be sent once")
             }
-            None => panic!("Unkown request type"), // TODO: better error handling
         };
         if let Err(err) = result {
             write_error(
                 err,
-                request.callback_idx(),
+                request.callback_idx,
                 write_socket,
                 &pool,
                 write_lock,
@@ -337,7 +290,6 @@ async fn handle_requests(
     write_socket: &Rc<UnixStream>,
     pool: Rc<Pool<Vec<u8>>>,
     write_lock: &Rc<Mutex<()>>,
-    fbs_pool: Rc<FlatBufferBuilderLocalPool<'_>>
 ) {
     // TODO - can use pipeline here, if we're fine with the added latency.
     for request in received_requests {
@@ -347,7 +299,6 @@ async fn handle_requests(
             write_socket.clone(),
             pool.clone(),
             write_lock.clone(),
-            fbs_pool.clone()
         );
     }
     // Yield to ensure that the subtasks aren't starved.
@@ -372,13 +323,13 @@ fn to_babushka_result<T, E: std::fmt::Display>(
 
 async fn parse_address_create_conn(
     write_socket: &Rc<UnixStream>,
-    request: Request<'_>,
+    request: &Request,
     write_lock: &Rc<Mutex<()>>,
     pool: Rc<Pool<Vec<u8>>>,
 ) -> Result<MultiplexedConnection, BabushkaError> {
-    let address = request.arg().unwrap().get(0);
+    let address = request.arg.first().unwrap();
     let client = to_babushka_result(
-        Client::open(address),
+        Client::open(address.as_str()),
         Some("Failed to open redis-rs client"),
     )?;
     let connection = to_babushka_result(
@@ -390,7 +341,7 @@ async fn parse_address_create_conn(
     to_babushka_result(write_command_reply(
         write_socket.clone(), 
         write_lock.clone(),
-        request.callback_idx(),
+        request.callback_idx,
         None,
         &pool,
         false).await,
@@ -404,8 +355,6 @@ async fn wait_for_server_address_create_conn(
     write_lock: &Rc<Mutex<()>>,
 ) -> Result<MultiplexedConnection, BabushkaError> {
     // Wait for the server's address
-    let pool = client_listener.pool.clone();
-    // let builder_pool = client_listener.builder_pool.clone();
     match client_listener.next_values().await {
         Closed(reason) => {
             return Err(BabushkaError::CloseError(reason));
@@ -415,22 +364,14 @@ async fn wait_for_server_address_create_conn(
                 let whole_request = received_requests
                     .get(index)
                     .ok_or_else(|| BabushkaError::BaseError("No received requests".to_string()))?;
-                let request = match root_as_request(&whole_request.buffer[whole_request.request_start..whole_request.request_end]) {
-                    Ok(res) => res,
-                    Err(err) => {
-                        println!("Error decoding protocol message");
-                        println!("|── Protobuf error was: {:?}", err.to_string());
-                        //println!("|── Bytes were: {:?}", arr);
-                        panic!();
-                    },
-                };
-                match FromPrimitive::from_u32(request.request_type().clone()).unwrap() {
+                let request = &whole_request.request;
+                match FromPrimitive::from_u32(request.request_type.clone()).unwrap() {
                     RequestType::ServerAddress => {
                         return parse_address_create_conn(
                             socket,
                             request,
                             write_lock,
-                            pool,
+                            client_listener.pool.clone(),
                         )
                         .await
                     }
@@ -469,7 +410,6 @@ async fn listen_on_client_stream(
     let rc_stream = Rc::new(stream);
     let write_lock = Rc::new(Mutex::new(()));
     let mut client_listener = SocketListener::new(rc_stream.clone());
-    let mut fbs_pool = Rc::new(FlatBufferBuilderPool::new().build());
     let connection = match wait_for_server_address_create_conn(
         &mut client_listener,
         &rc_stream,
@@ -488,7 +428,6 @@ async fn listen_on_client_stream(
         }
     };
     loop {
-        let pool = client_listener.pool.clone();
         match client_listener.next_values().await {
             Closed(reason) => {
                 if let ClosingReason::UnhandledError(err) = reason {
@@ -511,9 +450,8 @@ async fn listen_on_client_stream(
                     received_requests,
                     &connection,
                     &rc_stream,
-                    pool,
+                    client_listener.pool.clone(),
                     &write_lock.clone(),
-                    fbs_pool.clone()
                 )
                 .await;
             }
@@ -541,9 +479,6 @@ where
     let connected_clients = Arc::new(AtomicUsize::new(0));
     let notify_close = Arc::new(Notify::new());
     init_callback(Ok(get_socket_path()));
-    flatbuffers_pool::FlatBufferBuilderPool::init_global_pool_size(INIT_POOL_SIZE);
-    flatbuffers_pool::FlatBufferBuilderPool::max_global_pool_size(MAX_POOL_SIZE);
-    flatbuffers_pool::FlatBufferBuilderPool::global_buffer_capacity(BUFFER_CAPACITY);
     local.run_until(async move {
         loop {
             tokio::select! {
