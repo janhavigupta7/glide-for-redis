@@ -15,6 +15,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{RwLock, Mutex};
 use tokio::runtime::Builder;
+use rand::{thread_rng, Rng};
+use rand::distributions::Alphanumeric;
+
 pub mod hello_world {
     tonic::include_proto!("grpcbabushka");
 }
@@ -181,14 +184,19 @@ async fn run<InitCallback>(init_callback: Rc<InitCallback>) -> Result<(), Box<dy
     where
     InitCallback: Fn(Result<String, RedisError>) + Send + 'static,
     {
-    let path = "/tmp/tonic/helloworld";
+        let rand_string: String = thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(5)
+        .map(char::from)
+        .collect();
+    let path = format!("/tmp/babushka-socket-{}", rand_string);
 
-    tokio::fs::create_dir_all(Path::new(path).parent().unwrap()).await?;
+    tokio::fs::create_dir_all(Path::new(&path.clone()).parent().unwrap()).await?;
     let greeter = MyGreeter::default();
 
-    let uds = UnixListener::bind(path)?;
+    let uds = UnixListener::bind(path.clone())?;
     let uds_stream = UnixListenerStream::new(uds);
-    init_callback(Ok(path.to_string()));
+    init_callback(Ok(path));
     let local = task::LocalSet::new();
     local.run_until(async move {Server::builder()
         .add_service(GreeterServer::new(greeter))
