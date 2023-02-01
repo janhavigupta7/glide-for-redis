@@ -1,9 +1,92 @@
 syntax = "proto3";
 package babushkaproto;
 
+message BaseDataType {
+    oneof type {
+        string str_val = 1;
+        uint32 int_val = 2;
+        string error = 3;
+        Array array = 4;
+        BulkString bulk_str = 5;
+    }
+}
+
+message Array {
+    repeated BaseDataType item = 1;
+    bool is_complete = 2;
+}
+message ArrayResponse {
+    uint32 callback_idx = 1;
+    uint32 num_of_chunks = 2;
+    uint32 chunk_num = 3;
+    Array array = 4;
+}
+
+message BulkString {
+    oneof type {
+        string chunk_str = 1;
+        string full_str = 2;
+    }
+}
+
+message String {
+    oneof type {
+        string chunk_str = 1;
+        string full_str = 2;
+    }
+}
+message StringResponse {
+    uint32 callback_idx = 1;
+    uint32 num_of_chunks = 2;
+    uint32 chunk_num = 3;
+    repeated String value = 4;
+}
+
+message BaseResponse {
+    uint32 callback_idx = 1;
+}
+message BaseChunkInfo {
+    uint32 num_of_chunks = 2;
+    uint32 chunk_num = 3;
+}
+
+message IntResponse {
+    BaseResponse resp_info = 1;
+    uint64 value = 2;
+}
+
+message BaseStringResponse {
+    BaseResponse resp_info = 1;
+    string value = 2;
+}
+
+message BulkStringResponse {
+    BaseResponse resp_info = 1;
+    BaseChunkInfo chunk_info = 2;
+    String value = 3;
+}
 
 
-message Response {
+message DictResponse {
+    // Same as ArrayResponse, but after we have a complete array we'll devide it two pairs and return it as a dict
+    BaseResponse resp_info = 1;
+    BaseChunkInfo chunk_info = 2;
+    repeated String value = 3;
+}
+
+// message DictResponse {
+//     BaseResponse resp_info = 1;
+//     BaseChunkInfo chunk_info = 2;
+//     map<string, string> dict = 3;
+// }
+
+
+
+
+
+
+
+message SlotsResponse {
     message Node {
         string address = 1;
     }
@@ -47,10 +130,26 @@ message Slot {
     repeated Node replicas = 4;
 }
 
-
 message clusterSlotsResp {
     repeated Slot slots = 1;
 }
+
+
+message RespResponse {
+    string resp_str = 1;
+}
+
+
+message Response {
+    uint32 callback_idx = 1;
+    optional string error = 2;
+    oneof response {
+        RespResponse resp1 = 3;
+        NullResp resp2 = 4;
+        clusterSlotsResp resp3 = 5;
+    }
+}
+
 
 message Request {
     uint32 callback_idx = 1;

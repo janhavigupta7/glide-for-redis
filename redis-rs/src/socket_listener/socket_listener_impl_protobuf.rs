@@ -34,6 +34,10 @@ struct SocketListener {
     pool: Rc<Pool<Vec<u8>>>,
 }
 
+#[derive(Copy, Clone)]
+struct SingleSocketListener {
+}
+
 enum PipeListeningResult {
     Closed(ClosingReason),
     ReceivedValues(Vec<WholeRequest>),
@@ -466,53 +470,60 @@ async fn listen_on_client_stream(
         }
     }
 }
-
-async fn listen_on_socket<InitCallback>(init_callback: InitCallback)
-where
-    InitCallback: FnOnce(Result<String, RedisError>) + Send + 'static,
-{
-    // Bind to socket
-    let listener = match UnixListener::bind(get_socket_path()) {
-        Ok(listener) => listener,
-        Err(err) if err.kind() == AddrInUse => {
-            init_callback(Ok(get_socket_path()));
-            return;
-        }
-        Err(err) => {
-            init_callback(Err(err.into()));
-            return;
-        }
-    };
-    let local = task::LocalSet::new();
-    let connected_clients = Arc::new(AtomicUsize::new(0));
-    let notify_close = Arc::new(Notify::new());
-    init_callback(Ok(get_socket_path()));
-    local.run_until(async move {
-        loop {
-            tokio::select! {
-                listen_v = listener.accept() => {
-                    if let Ok((stream, _addr)) = listen_v {
-                        // New client
-                        let cloned_close_notifier = notify_close.clone();
-                        let cloned_connected_clients = connected_clients.clone();
-                        cloned_connected_clients.fetch_add(1, Ordering::Relaxed);
-                        task::spawn_local(listen_on_client_stream(stream, cloned_close_notifier.clone(), cloned_connected_clients));
-                    } else if listen_v.is_err() {
-                        close_socket();
-                        return;
-                    }
-                },
-                // `notify_one` was called to indicate no more clients are connected,
-                // close the socket
-                _ = notify_close.notified() => {close_socket(); return;},
-                // Interrupt was received, close the socket
-                _ = handle_signals() => {close_socket(); return;}
+use dispose::{Dispose, Disposable};
+impl Dispose for SingleSocketListener {
+    fn dispose(self) { println!("Deleting socket file {:?}", get_socket_path()); close_socket(); }
+}
+impl SingleSocketListener {
+    fn new() -> Self {
+        return SingleSocketListener{};
+    }
+    pub(crate) async fn listen_on_socket<InitCallback>(self, init_callback: InitCallback)
+    where
+        InitCallback: FnOnce(Result<String, RedisError>) + Send + 'static,
+    {
+        // Bind to socket
+        let listener = match UnixListener::bind(get_socket_path()) {
+            Ok(listener) => listener,
+            Err(err) if err.kind() == AddrInUse => {
+                init_callback(Ok(get_socket_path()));
+                return;
+            }
+            Err(err) => {
+                init_callback(Err(err.into()));
+                return;
             }
         };
-        })
-    .await;
+        let local = task::LocalSet::new();
+        let connected_clients = Arc::new(AtomicUsize::new(0));
+        let notify_close = Arc::new(Notify::new());
+        init_callback(Ok(get_socket_path()));
+        local.run_until(async move {
+            loop {
+                tokio::select! {
+                    listen_v = listener.accept() => {
+                        if let Ok((stream, _addr)) = listen_v {
+                            // New client
+                            let cloned_close_notifier = notify_close.clone();
+                            let cloned_connected_clients = connected_clients.clone();
+                            cloned_connected_clients.fetch_add(1, Ordering::Relaxed);
+                            task::spawn_local(listen_on_client_stream(stream, cloned_close_notifier.clone(), cloned_connected_clients));
+                        } else if listen_v.is_err() {
+                            close_socket();
+                            return;
+                        }
+                    },
+                    // `notify_one` was called to indicate no more clients are connected,
+                    // close the socket
+                    _ = notify_close.notified() => {println!("No clients connected, not exiting");},
+                    // Interrupt was received, close the socket
+                    _ = handle_signals() => {close_socket(); return;}
+                }
+            };
+            })
+        .await;
+    }
 }
-
 #[derive(Debug)]
 /// Enum describing the reason that a socket listener stopped listening on a socket.
 pub enum ClosingReason {
@@ -575,7 +586,8 @@ where
                 .build();
             match runtime {
                 Ok(runtime) => {
-                    runtime.block_on(listen_on_socket(init_callback));
+                    let listener = Disposable::new(SingleSocketListener::new());
+                    runtime.block_on(listener.listen_on_socket(init_callback));
                 }
                 Err(err) => {
                     close_socket();

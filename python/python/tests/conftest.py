@@ -1,4 +1,8 @@
 import pytest
+import sys
+sys.path.append("/home/ubuntu/babushka/python/.env/lib")
+sys.path.append("/home/ubuntu/babushka/python/.env/lib64")
+
 from pybushka.async_ffi_client import RedisAsyncFFIClient
 from pybushka.async_socket_client import RedisAsyncSocketClient
 from pybushka.async_protobuf_client import RedisAsyncProtobufClient

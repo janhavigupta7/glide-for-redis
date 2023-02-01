@@ -17,8 +17,18 @@ from .pybushka import (
     start_socket_listener_protobuf_external
 )
 
+import os
+class SocketFilesSaver:
+    def __init__(self):
+        self.socket_files = set()
+    def __del__(self):
+        for file in self.socket_files:
+            print(f"deleting file: {file}")
+            os.remove(file)
+        
+        
 HEADER_LEN = 4
-
+socket_files_saver = SocketFilesSaver()
 class RedisAsyncProtobufClient(CoreCommands):
     @classmethod
     async def create(cls, config: ClientConfiguration = None):
@@ -40,6 +50,9 @@ class RedisAsyncProtobufClient(CoreCommands):
             else:
                 # Received socket path
                 self.socket_path = socket_path
+                global socket_files_saver
+                socket_files_saver.socket_files.add(socket_path)
+                print(f"added file to set: {socket_files_saver.socket_files}")
                 loop.call_soon_threadsafe(init_future.set_result, True)
         print("waiting for callback")
         start_socket_listener_protobuf_external(init_callback=init_callback)
@@ -55,6 +68,14 @@ class RedisAsyncProtobufClient(CoreCommands):
         await self.execute_command(PyRequestType.ServerAddress, server_url)
         return self
 
+    def get_reader_task(self):
+        global reader_tasks
+        if not reader_tasks:
+            new_task = "todo"
+        else:
+            reader_tasks.pop()
+            
+    
     async def _wait_for_init_complete(self):
         while not self._done_init:
             await asyncio.sleep(0.1)

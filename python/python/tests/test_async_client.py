@@ -7,6 +7,9 @@ import redis
 import pytest
 import redis.asyncio as redispy
 
+from pybushka.async_flatbuffers_client import RedisAsyncFlatbuffersClient
+from pybushka.config import ClientConfiguration
+
 
 def get_random_string(length):
     letters = string.ascii_letters + string.digits + string.punctuation
@@ -107,12 +110,39 @@ class TestFlatbuffersClient:
 
 sys.path.append("/home/ubuntu/babushka/python/PATH")
 from babushkaproto_pb2 import Response as babushkaResponse
-from babushkaproto_pb2 import CommandReply, StrResponse, RepStrResponse
+from babushkaproto_pb2 import CommandReply, StrResponse, RepStrResponse, DictResponse, StringResponse, ArrayResponse
 from google.protobuf.json_format import MessageToDict
 from protobuf_to_dict import protobuf_to_dict
 from protobuf_decoder.protobuf_decoder import Parser
 @pytest.mark.asyncio
 class TestProtobufClient:
+    
+    def concatenate_items(self, item1, item2):
+        ## Combine two items together
+       return item 
+    def test_string_response(self):
+        data = "*4\r\n$5\r\nhello\r\n$5\r\nworld\r\n:67876\r\n+OK\r\n"
+        chunk_size = 5
+        data = ["bar1", ["x1", "x2", "x3"], 4, "ERROR"]
+        msg1 = ArrayResponse()
+        msg1.array.item.add().bulk_str.full_str = "bar1"
+        nested_array = msg1.array.item.add().array 
+        nested_array.item.add().bulk_str.full_str = "x1"
+        nested_array.is_complete = False
+        msg1.array.is_complete = False
+        msg2 = ArrayResponse()
+        nested_array2 = msg2.array.item.add().array 
+        nested_array2.item.add().bulk_str.full_str = "x2"
+        nested_array2.item.add().bulk_str.full_str = "x3"
+        msg2.array.is_complete = True
+        msg2.array.item.add().int_val = 4
+        msg2.array.item.add().str_val = "OK"
+        
+        print("msg1:\n", MessageToDict(msg1, preserving_proto_field_name=True)['array'])
+        print("msg2:\n", MessageToDict(msg2, preserving_proto_field_name=True)['array'])
+
+
+
     def test_protobuf(self):
         rep1 = RepStrResponse()
         rep1.arg.extend(["bar1", "bar2", "bar3"])

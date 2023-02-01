@@ -207,37 +207,37 @@ async def main(
     clients_to_run,
     host,
 ):
-    # if clients_to_run == "all":
-    #     # Redis-py
-    #     redispy_client = await redispy.Redis(
-    #         host=host, port=PORT, decode_responses=True
-    #     )
-    #     await run_client(
-    #         redispy_client,
-    #         "redispy",
-    #         event_loop_name,
-    #         total_commands,
-    #         num_of_concurrent_tasks,
-    #         data_size,
-    #     )
+    if clients_to_run == "all":
+        # Redis-py
+        redispy_client = await redispy.Redis(
+            host=host, port=PORT, decode_responses=True
+        )
+        await run_client(
+            redispy_client,
+            "redispy",
+            event_loop_name,
+            total_commands,
+            num_of_concurrent_tasks,
+            data_size,
+        )
 
 
-    # if (
-    #     clients_to_run == "all"
-    #     or clients_to_run == "ffi"
-    #     or clients_to_run == "babushka"
-    # ):
-    #     # Babushka FFI
-    #     config = ClientConfiguration(host=host, port=PORT)
-    #     babushka_client = await RedisAsyncFFIClient.create(config)
-    #     await run_client(
-    #         babushka_client,
-    #         "babushka-FFI",
-    #         event_loop_name,
-    #         total_commands,
-    #         num_of_concurrent_tasks,
-    #         data_size,
-    #     )
+    if (
+        clients_to_run == "all"
+        or clients_to_run == "ffi"
+        or clients_to_run == "babushka"
+    ):
+        # Babushka FFI
+        config = ClientConfiguration(host=host, port=PORT)
+        babushka_client = await RedisAsyncFFIClient.create(config)
+        await run_client(
+            babushka_client,
+            "babushka-FFI",
+            event_loop_name,
+            total_commands,
+            num_of_concurrent_tasks,
+            data_size,
+        )
 
     if (
         clients_to_run == "all"
