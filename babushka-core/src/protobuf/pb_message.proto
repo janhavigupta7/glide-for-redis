@@ -1,0 +1,16 @@
+syntax = "proto3";
+package pb_message;
+
+message Request {
+    uint32 callback_idx = 1;
+    uint32 num_of_chunks = 2;
+    uint32 chunk_idx = 3;
+    uint32 request_type = 4;
+    string args_buffer = 5;
+}
+
+message Response {
+    uint32 callback_idx = 1;
+    optional string error = 2;
+    optional bytes resp_pointer = 3;
+}

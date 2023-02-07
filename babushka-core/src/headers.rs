@@ -1,6 +1,8 @@
 use lifeguard::RcRecycled;
 use num_derive::{FromPrimitive, ToPrimitive};
 use std::{ops::Range, rc::Rc};
+include!(concat!(env!("OUT_DIR"), "/protobuf/mod.rs"));
+use pb_message::{Request, Response};
 
 /// Length of the message field in the request & response.
 pub const MESSAGE_LENGTH_FIELD_LENGTH: usize = 4;
