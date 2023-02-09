@@ -1,4 +1,4 @@
-use super::{headers::*, rotating_buffer::RotatingBuffer};
+use super::{headers_legacy::*, rotating_buffer_legacy::RotatingBuffer};
 use bytes::BufMut;
 use futures::stream::StreamExt;
 use num_traits::ToPrimitive;
