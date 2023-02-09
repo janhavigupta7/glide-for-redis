@@ -3,14 +3,15 @@ package pb_message;
 
 message Request {
     uint32 callback_idx = 1;
-    uint32 num_of_chunks = 2;
-    uint32 chunk_idx = 3;
-    uint32 request_type = 4;
-    string args_buffer = 5;
+    uint32 request_type = 2;
+    repeated string args = 3;
 }
 
 message Response {
     uint32 callback_idx = 1;
-    optional string error = 2;
-    optional bytes resp_pointer = 3;
+    oneof value {
+        uint64 resp_pointer = 2;
+        string request_error = 4;
+        string closing_error = 5;
+    }
 }

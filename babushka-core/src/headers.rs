@@ -27,7 +27,7 @@ pub const CALLBACK_INDEX_END: usize = MESSAGE_LENGTH_END + CALLBACK_INDEX_FIELD_
 /// The index at the end of the type field.
 pub const TYPE_END: usize = CALLBACK_INDEX_END + TYPE_FIELD_LENGTH;
 /// The length of the header.
-pub const HEADER_END: usize = TYPE_END;
+pub const HEADER_END: usize = MESSAGE_LENGTH_END;
 /// The length of the header, when it contains a second argument.
 pub const HEADER_WITH_KEY_LENGTH_END: usize = HEADER_END + MESSAGE_LENGTH_FIELD_LENGTH;
 
@@ -54,19 +54,13 @@ pub enum ResponseType {
     /// Type of response containing an error causes the connection to close.
     ClosingError = 3,
 }
-
-#[derive(PartialEq, Debug, Clone)]
-pub(super) enum RequestRanges {
-    ServerAddress {
-        address: Range<usize>,
-    },
-    Get {
-        key: Range<usize>,
-    },
-    Set {
-        key: Range<usize>,
-        value: Range<usize>,
-    },
+/// An enum representing the values of the request type field.
+#[derive(ToPrimitive, FromPrimitive, PartialEq, Eq, Debug)]
+pub enum ErrorType {
+    /// Type of response containing an error that impacts a single request.
+    RequestError = 0,
+    /// Type of response containing an error causes the connection to close.
+    ClosingError = 1,
 }
 
 pub(super) type Buffer = RcRecycled<Vec<u8>>;
@@ -76,8 +70,5 @@ pub(super) type SharedBuffer = Rc<Buffer>;
 
 /// The full parsed information for a request from the client's caller.
 pub(super) struct WholeRequest {
-    pub(super) callback_index: u32,
-    pub(super) request_type: RequestRanges,
-    /// A buffer containing the original request, and all the non-structured values that weren't copied.
-    pub(super) buffer: SharedBuffer,
+    pub(super) request: Request,
 }

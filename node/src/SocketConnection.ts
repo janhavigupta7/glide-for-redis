@@ -2,6 +2,8 @@ import { BabushkaInternal } from "../";
 import * as net from "net";
 import { Logger } from "./Logger";
 import { stringFromPointer, valueFromPointer } from "babushka-rs-internal";
+import { pb_message } from "./ProtobufMessage";
+
 const {
     StartSocketConnection,
     HEADER_LENGTH_IN_BYTES,
@@ -29,7 +31,7 @@ export class SocketConnection {
     private readonly encoder = new TextEncoder();
     private backingReadBuffer = new ArrayBuffer(1024);
     private backingWriteBuffer = new ArrayBuffer(1024);
-    private bufferedWriteRequests: WriteRequest[] = [];
+    private bufferedWriteRequests: Uint8Array[] = [];
     private writeInProgress = false;
     private remainingReadData: Uint8Array | undefined;
 
@@ -37,15 +39,14 @@ export class SocketConnection {
         const dataArray = this.remainingReadData
             ? this.concatBuffers(this.remainingReadData, data)
             : new Uint8Array(data.buffer, data.byteOffset, data.length);
-
         let counter = 0;
         while (counter <= dataArray.byteLength - HEADER_LENGTH_IN_BYTES) {
-            const header = new DataView(dataArray.buffer, counter, 12);
+            const header = new DataView(dataArray.buffer, counter, HEADER_LENGTH_IN_BYTES);
             const length = header.getUint32(0, true);
             if (length === 0) {
                 throw new Error("length 0");
             }
-            if (counter + length > dataArray.byteLength) {
+            if (counter + length + HEADER_LENGTH_IN_BYTES > dataArray.byteLength) {
                 this.remainingReadData = new Uint8Array(
                     dataArray.buffer,
                     counter,
@@ -53,30 +54,27 @@ export class SocketConnection {
                 );
                 break;
             }
-            const callbackIndex = header.getUint32(4, true);
-            const responseType = header.getUint32(8, true) as ResponseType;
+            const responseBytes = Buffer.from(
+                dataArray.buffer,
+                counter + HEADER_LENGTH_IN_BYTES,
+                length
+            );
+            var message = pb_message.Response.decode(responseBytes);
             const [resolve, reject] =
-                this.promiseCallbackFunctions[callbackIndex];
-            this.availableCallbackSlots.push(callbackIndex);
-            if (responseType === ResponseType.Null) {
-                resolve(null);
+                this.promiseCallbackFunctions[message.callbackIdx];
+            this.availableCallbackSlots.push(message.callbackIdx);
+            if (message.requestError !== null) {
+                reject(message.requestError);
+            } else if (message.closingError !== null) {
+                reject(message.closingError);
+                this.dispose();
+            } else if (message.respPointer) {
+                const pointer = message.respPointer;
+                resolve(valueFromPointer(BigInt(pointer.toString())));
             } else {
-                const valuePointerLength = length - HEADER_LENGTH_IN_BYTES;
-                const valueBuffer = new DataView(
-                    dataArray.buffer,
-                    dataArray.byteOffset + counter + HEADER_LENGTH_IN_BYTES,
-                    valuePointerLength
-                );
-                const pointer = valueBuffer.getBigUint64(0, true);
-                if (responseType === ResponseType.Value) {
-                    resolve(valueFromPointer(pointer));
-                } else if (responseType === ResponseType.RequestError) {
-                    reject(stringFromPointer(pointer));
-                } else if (responseType === ResponseType.ClosingError) {
-                    this.dispose(stringFromPointer(pointer));
-                }
+                resolve(null);
             }
-            counter = counter + length;
+            counter = counter + length + HEADER_LENGTH_IN_BYTES;
         }
 
         if (counter == dataArray.byteLength) {
@@ -118,7 +116,7 @@ export class SocketConnection {
     private getCallbackIndex(): number {
         return (
             this.availableCallbackSlots.pop() ??
-            this.promiseCallbackFunctions.length
+            this.promiseCallbackFunctions.length + 1
         );
     }
 
@@ -165,15 +163,9 @@ export class SocketConnection {
         return encodeResult.written ?? 0;
     }
 
-    private getRequiredBufferLength(writeRequests: WriteRequest[]): number {
+    private getRequiredBufferLength(writeRequests: Uint8Array[]): number {
         return writeRequests.reduce((sum, request) => {
-            return (
-                sum +
-                this.getHeaderLength(request) +
-                // length * 3 is the maximum ratio between UTF16 byte count to UTF8 byte count.
-                // TODO - in practice we used a small part of our arrays, and this will be very expensive on
-                // large inputs. We can use the slightly slower Buffer.byteLength on longer strings.
-                this.lengthOfStrings(request) * 3
+            return ( sum + request.byteLength + HEADER_LENGTH_IN_BYTES
             );
         }, 0);
     }
@@ -194,29 +186,16 @@ export class SocketConnection {
             this.backingWriteBuffer = new ArrayBuffer(requiredBufferLength);
         }
         let cursor = 0;
-        for (const writeRequest of writeRequests) {
-            const headerLength = this.getHeaderLength(writeRequest);
-            let argOffset = 0;
-            const writtenLengths = [];
-            for (const arg of writeRequest.args) {
-                const argLength = this.encodeStringToWriteBuffer(
-                    arg,
-                    cursor + headerLength + argOffset
-                );
-                argOffset += argLength;
-                writtenLengths.push(argLength);
-            }
-
-            const length = headerLength + argOffset;
-            this.writeHeaderToWriteBuffer(
-                length,
-                writeRequest.callbackIndex,
-                writeRequest.type,
-                headerLength,
-                writtenLengths,
-                cursor
+        for (const request of writeRequests) {
+            const headerView = new DataView(
+                this.backingWriteBuffer,
+                cursor,
+                HEADER_LENGTH_IN_BYTES
             );
-            cursor += length;
+            headerView.setUint32(0, request.byteLength, true);
+            let payloadView = new Uint8Array(this.backingWriteBuffer, cursor + HEADER_LENGTH_IN_BYTES, request.byteLength);
+            payloadView.set(request);
+            cursor += request.byteLength + HEADER_LENGTH_IN_BYTES;
         }
 
         const uint8Array = new Uint8Array(this.backingWriteBuffer, 0, cursor);
@@ -229,8 +208,15 @@ export class SocketConnection {
         });
     }
 
-    private writeOrBufferRequest(writeRequest: WriteRequest) {
-        this.bufferedWriteRequests.push(writeRequest);
+    private writeOrBufferRequest(callbackIdx: number, requestType: number, args: string[]) {
+        var message = pb_message.Request.create({
+            callbackIdx: callbackIdx,
+            requestType: requestType,
+            args: args
+        });
+        var request = pb_message.Request.encode(message).finish();
+        var decoded = pb_message.Request.decode(request);
+        this.bufferedWriteRequests.push(request);
         if (this.writeInProgress) {
             return;
         }
@@ -241,11 +227,7 @@ export class SocketConnection {
         return new Promise((resolve, reject) => {
             const callbackIndex = this.getCallbackIndex();
             this.promiseCallbackFunctions[callbackIndex] = [resolve, reject];
-            this.writeOrBufferRequest({
-                args: [key],
-                type: RequestType.GetString,
-                callbackIndex,
-            });
+            this.writeOrBufferRequest(callbackIndex, RequestType.GetString, [key]);
         });
     }
 
@@ -253,11 +235,7 @@ export class SocketConnection {
         return new Promise((resolve, reject) => {
             const callbackIndex = this.getCallbackIndex();
             this.promiseCallbackFunctions[callbackIndex] = [resolve, reject];
-            this.writeOrBufferRequest({
-                args: [key, value],
-                type: RequestType.SetString,
-                callbackIndex,
-            });
+            this.writeOrBufferRequest(callbackIndex, RequestType.SetString, [key, value]);
         });
     }
 
@@ -265,11 +243,7 @@ export class SocketConnection {
         return new Promise((resolve, reject) => {
             const callbackIndex = this.getCallbackIndex();
             this.promiseCallbackFunctions[callbackIndex] = [resolve, reject];
-            this.writeOrBufferRequest({
-                args: [address],
-                type: RequestType.ServerAddress,
-                callbackIndex,
-            });
+            this.writeOrBufferRequest(callbackIndex, RequestType.ServerAddress, [address]);
         });
     }
 

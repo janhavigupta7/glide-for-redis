@@ -4,7 +4,10 @@ use bytes::BufMut;
 use dispose::{Disposable, Dispose};
 use futures::stream::StreamExt;
 use logger_core::{log, Level};
+use num_traits::FromPrimitive;
 use num_traits::ToPrimitive;
+use pb_message::{Request, Response};
+use protobuf::Message;
 use redis::aio::MultiplexedConnection;
 use redis::{AsyncCommands, RedisResult, Value};
 use redis::{Client, RedisError};
@@ -149,160 +152,88 @@ async fn write_to_output(writer: &Rc<Writer>) {
     }
 }
 
-fn write_response_header(
-    accumulated_outputs: &Cell<Vec<u8>>,
-    callback_index: u32,
-    response_type: ResponseType,
-    length: usize,
-) -> Result<(), io::Error> {
-    let mut vec = accumulated_outputs.take();
-    vec.put_u32_le(length as u32);
-    vec.put_u32_le(callback_index);
-    vec.put_u32_le(response_type.to_u32().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("Response type {response_type:?} wasn't found"),
-        )
-    })?);
-
-    assert!(!vec.is_empty());
-    accumulated_outputs.set(vec);
-    Ok(())
-}
-
-fn write_null_response_header(
-    accumulated_outputs: &Cell<Vec<u8>>,
-    callback_index: u32,
-) -> Result<(), io::Error> {
-    write_response_header(
-        accumulated_outputs,
-        callback_index,
-        ResponseType::Null,
-        HEADER_END,
-    )
-}
-
-fn write_pointer_to_output<T>(accumulated_outputs: &Cell<Vec<u8>>, pointer_to_write: *mut T) {
-    let mut vec = accumulated_outputs.take();
-    vec.write_u64::<LittleEndian>(pointer_to_write as u64)
-        .unwrap();
-    accumulated_outputs.set(vec);
-}
-
 async fn send_set_request(
-    buffer: SharedBuffer,
-    key_range: Range<usize>,
-    value_range: Range<usize>,
-    callback_index: u32,
+    request: &Request,
     mut connection: MultiplexedConnection,
     writer: Rc<Writer>,
 ) -> RedisResult<()> {
-    connection
-        .set(&buffer[key_range], &buffer[value_range])
-        .await?;
-    write_null_response_header(&writer.accumulated_outputs, callback_index)?;
-    write_to_output(&writer).await;
+    let args = request.args.to_vec();
+    let result = connection.set(&args[0], &args[1]).await;
+    write_response(result, request.callback_idx, &writer, ResponseType::Value).await?;
     Ok(())
 }
 
-fn write_redis_value(
-    value: Value,
+async fn write_response(
+    resp_result: Result<Value, RedisError>,
     callback_index: u32,
     writer: &Rc<Writer>,
+    response_type: ResponseType,
 ) -> Result<(), io::Error> {
-    if let Value::Nil = value {
-        // Since null values don't require any additional data, they can be sent without any extra effort.
-        write_null_response_header(&writer.accumulated_outputs, callback_index)?;
-    } else {
-        write_response_header(
-            &writer.accumulated_outputs,
-            callback_index,
-            ResponseType::Value,
-            HEADER_END + size_of::<usize>(),
-        )?;
-        // Move the value to the heap and leak it. The wrapper should use `Box::from_raw` to recreate the box, use the value, and drop the allocation.
-        let pointer = Box::leak(Box::new(value));
-        write_pointer_to_output(&writer.accumulated_outputs, pointer);
+    let mut response = Response::new();
+    response.callback_idx = callback_index;
+    match resp_result {
+        Ok(value) => {
+            if value != Value::Nil {
+                // Since null values don't require any additional data, they can be sent without any extra effort.
+                // Move the value to the heap and leak it. The wrapper should use `Box::from_raw` to recreate the box, use the value, and drop the allocation.
+                let pointer = Box::leak(Box::new(value));
+                let raw_pointer = pointer as *mut redis::Value;
+                response.value = Some(pb_message::response::Value::RespPointer(raw_pointer as u64))
+                //write_pointer_to_output(&writer.accumulated_outputs, pointer);
+            }
+        }
+        Err(err) => match response_type {
+            ResponseType::ClosingError => {
+                response.value = Some(pb_message::response::Value::ClosingError(err.to_string()))
+            }
+            _ => response.value = Some(pb_message::response::Value::RequestError(err.to_string())),
+        },
     }
+
+    let mut vec = writer.accumulated_outputs.take();
+    let length = response.compute_size() as u32;
+    vec.put_u32_le(length);
+    vec.extend_from_slice(&response.write_to_bytes().unwrap());
+    // println!("Writing response {:?}, length = {}", &vec, length);
+    writer.accumulated_outputs.set(vec);
+    write_to_output(&writer).await;
     Ok(())
 }
 
 async fn send_get_request(
-    vec: SharedBuffer,
-    key_range: Range<usize>,
-    callback_index: u32,
+    request: &Request,
     mut connection: MultiplexedConnection,
     writer: Rc<Writer>,
 ) -> RedisResult<()> {
-    let result: Value = connection.get(&vec[key_range]).await?;
-    write_redis_value(result, callback_index, &writer)?;
-    write_to_output(&writer).await;
+    let result = connection.get(&request.args.first().unwrap()).await;
+    write_response(result, request.callback_idx, &writer, ResponseType::Value).await?;
     Ok(())
 }
 
-fn handle_request(request: WholeRequest, connection: MultiplexedConnection, writer: Rc<Writer>) {
+fn handle_request(
+    whole_request: WholeRequest,
+    connection: MultiplexedConnection,
+    writer: Rc<Writer>,
+) {
     task::spawn_local(async move {
-        let result = match request.request_type {
-            RequestRanges::Get { key: key_range } => {
-                send_get_request(
-                    request.buffer,
-                    key_range,
-                    request.callback_index,
-                    connection,
-                    writer.clone(),
-                )
-                .await
-            }
-            RequestRanges::Set {
-                key: key_range,
-                value: value_range,
-            } => {
-                send_set_request(
-                    request.buffer,
-                    key_range,
-                    value_range,
-                    request.callback_index,
-                    connection,
-                    writer.clone(),
-                )
-                .await
-            }
-            RequestRanges::ServerAddress { address: _ } => {
+        let request = &whole_request.request;
+        let result = match FromPrimitive::from_u32(request.request_type.clone()).unwrap() {
+            RequestType::GetString => send_get_request(request, connection, writer.clone()).await,
+            RequestType::SetString => send_set_request(request, connection, writer.clone()).await,
+            RequestType::ServerAddress => {
                 unreachable!("Server address can only be sent once")
             }
         };
         if let Err(err) = result {
-            write_error(
-                &err.to_string(),
-                request.callback_index,
-                writer,
-                ResponseType::RequestError,
+            let _ = write_response(
+                Err(err),
+                request.callback_idx,
+                &writer,
+                ResponseType::ClosingError,
             )
             .await;
         }
     });
-}
-
-async fn write_error(
-    err: &String,
-    callback_index: u32,
-    writer: Rc<Writer>,
-    response_type: ResponseType,
-) {
-    let length = HEADER_END + size_of::<usize>();
-    write_response_header(
-        &writer.accumulated_outputs,
-        callback_index,
-        response_type,
-        length,
-    )
-    .expect("Failed writing error to vec");
-    // Move the error string to the heap and leak it. The wrapper should use `Box::from_raw` to recreate the box, use the error string, and drop the allocation.
-    write_pointer_to_output(
-        &writer.accumulated_outputs,
-        Box::leak(Box::new(err.to_string())),
-    );
-    write_to_output(&writer).await;
 }
 
 async fn handle_requests(
@@ -336,16 +267,11 @@ fn to_babushka_result<T, E: std::fmt::Display>(
 
 async fn parse_address_create_conn(
     writer: &Rc<Writer>,
-    request: &WholeRequest,
-    address_range: Range<usize>,
+    request: &Request,
 ) -> Result<MultiplexedConnection, ClientCreationError> {
-    let address = &request.buffer[address_range];
-    let address = to_babushka_result(
-        std::str::from_utf8(address),
-        Some("Failed to parse address"),
-    )?;
+    let address = request.args.first().unwrap();
     let client = to_babushka_result(
-        Client::open(address),
+        Client::open(address.as_str()),
         Some("Failed to open redis-rs client"),
     )?;
     let connection = to_babushka_result(
@@ -354,9 +280,14 @@ async fn parse_address_create_conn(
     )?;
 
     // Send response
-    write_null_response_header(&writer.accumulated_outputs, request.callback_index)
-        .expect("Failed writing address response.");
-    write_to_output(writer).await;
+    write_response(
+        Ok(Value::Nil),
+        request.callback_idx,
+        &writer,
+        ResponseType::Null,
+    )
+    .await
+    .expect("Failed writing address response.");
     Ok(connection)
 }
 
@@ -368,14 +299,17 @@ async fn wait_for_server_address_create_conn(
     match client_listener.next_values().await {
         Closed(reason) => Err(ClientCreationError::SocketListenerClosed(reason)),
         ReceivedValues(received_requests) => {
-            if let Some(request) = received_requests.first() {
-                match request.request_type.clone() {
-                    RequestRanges::ServerAddress {
-                        address: address_range,
-                    } => parse_address_create_conn(writer, request, address_range).await,
-                    _ => Err(ClientCreationError::UnhandledError(
-                        "Received another request before receiving server address".to_string(),
-                    )),
+            if let Some(whole_request) = received_requests.first() {
+                let request = &whole_request.request;
+                match FromPrimitive::from_u32(request.request_type).unwrap() {
+                    RequestType::ServerAddress => {
+                        return parse_address_create_conn(writer, &request).await
+                    }
+                    _ => {
+                        return Err(ClientCreationError::UnhandledError(
+                            "Received another request before receiving server address".to_string(),
+                        ))
+                    }
                 }
             } else {
                 Err(ClientCreationError::UnhandledError(
@@ -444,7 +378,7 @@ async fn listen_on_client_stream(socket: UnixStream) {
     tokio::select! {
             reader_closing = read_values_loop(client_listener, connection, writer.clone()) => {
                 if let ClosingReason::UnhandledError(err) = reader_closing {
-                    write_error(&err.to_string(), u32::MAX, writer, ResponseType::ClosingError).await;
+                    let _ = write_response(Err(err), u32::MAX, &writer, ResponseType::ClosingError).await;
                 };
             },
             writer_closing = receiver.recv() => {
