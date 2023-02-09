@@ -1,11 +1,10 @@
 use super::headers::*;
 use byteorder::{LittleEndian, ReadBytesExt};
 use lifeguard::{pool, Pool, StartingSize, Supplier};
-use num_traits::FromPrimitive;
 use pb_message::Request;
 use protobuf::Message;
 use std::{
-    io::{self, Error, ErrorKind},
+    io,
     mem,
     ops::Range,
     rc::Rc,
