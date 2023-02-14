@@ -2,6 +2,7 @@ import percentile from "percentile";
 import { stdev } from "stats-lite";
 import { createClient } from "redis";
 import { AsyncClient, SocketConnection, setLoggerConfig } from "babushka-rs";
+import { LegacySocketConnection } from "babushka-legacy";
 import commandLineArgs from "command-line-args";
 import { writeFileSync } from "fs";
 
@@ -201,7 +202,7 @@ async function main(
     total_commands: number,
     num_of_concurrent_tasks: number,
     data_size: number,
-    clients_to_run: "all" | "ffi" | "socket" | "babushka",
+    clients_to_run: "all" | "ffi" | "socket" | "babushka" | "socket-legacy", 
     address: string,
     clientCount: number
 ) {
@@ -238,7 +239,27 @@ async function main(
         );
         await run_clients(
             clients,
-            "babushka socket",
+            "babushka protobuf socket",
+            total_commands,
+            num_of_concurrent_tasks,
+            data_size,
+            data
+        );
+        clients.forEach((client) => (client as SocketConnection).dispose());
+        await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    if (
+        clients_to_run == "socket-legacy" ||
+        clients_to_run == "all" ||
+        clients_to_run == "babushka"
+    ) {
+        const clients = await createClients(clientCount, () =>
+            LegacySocketConnection.CreateConnection(address)
+        );
+        await run_clients(
+            clients,
+            "babushka legacy socket",
             total_commands,
             num_of_concurrent_tasks,
             data_size,

@@ -12,6 +12,7 @@
         "@types/command-line-args": "^5.2.0",
         "@types/stats-lite": "^2.2.0",
         "babushka-rs": "file:../../node",
+        "babushka-legacy": "file:../../node-legacy",
         "command-line-args": "^5.2.1",
         "redis": "^4.2.0",
         "stats-lite": "^2.2.0",

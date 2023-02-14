@@ -51,6 +51,13 @@ function runNodeBenchmark(){
   npm install
   rm -rf build-ts
   npm run build
+  if [ $runAllBenchmarks == "socket-legacy" ]; 
+  then
+    cd ${BENCH_FOLDER}/../node-legacy
+    npm install
+    rm -rf build-ts
+    npm run build
+  fi
   cd ${BENCH_FOLDER}/node
   npm install
   npx tsc
@@ -112,6 +119,7 @@ function Help() {
     echo
     echo Pass -only-ffi to only run Babushka FFI based clients.
     echo Pass -only-socket to only run Babushka socket based clients.
+    echo Pass -only-legacy to only run Babushka legacy socket based clients.
     echo Pass -only-babushka to only run Babushk clients.
     echo Pass -tls to connect to server using transport level security \(TLS\).
     echo By default, the benchmark runs against localhost. Pass -host and then the address of the requested Redis server in order to connect to a different server.
@@ -176,6 +184,9 @@ do
             ;;
         -only-babushka)
             chosenClients="babushka"
+            ;;  
+        -only-legacy)
+            chosenClients="socket-legacy"
             ;;                  
         -no-csv) writeResultsCSV=0 ;;
         -tls) 

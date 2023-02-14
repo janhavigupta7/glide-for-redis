@@ -1,0 +1,31 @@
+[package]
+authors = ["Shachar Langbeheim <shachlan@amazon.com>"]
+edition = "2021"
+name = "babushka_js_legacy"
+version = "0.1.0"
+license = "BSD-3-Clause"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+redis = { path = "../../submodules/redis-rs/redis", features = ["aio", "tokio-comp"] }
+babushka = { path = "../../babushka-core" }
+tokio-util = { version = "0.7", optional = true }
+tokio = { version = "1", features = ["rt", "macros", "rt-multi-thread", "time"] }
+napi = {version = "2.10", features = ["napi4", "napi6"] }
+napi-derive = "2"
+logger_core = {path = "../../logger_core"}
+tracing-subscriber = "0.3.16"
+byteorder = "1.4.3"
+
+
+
+[build-dependencies]
+napi-build = "2.0.1"
+
+[profile.release]
+lto = true
+debug = true
