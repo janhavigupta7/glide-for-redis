@@ -176,6 +176,8 @@ async fn write_response(
                 let pointer = Box::leak(Box::new(value));
                 let raw_pointer = pointer as *mut redis::Value;
                 response.value = Some(pb_message::response::Value::RespPointer(raw_pointer as u64))
+                //let bytes = (raw_pointer as u64).to_le_bytes();
+                //response.value = Some(pb_message::response::Value::RespPointer(bytes.to_vec()))
             }
         }
         Err(err) => match response_type {

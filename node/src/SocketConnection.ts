@@ -54,12 +54,11 @@ export class SocketConnection {
                 );
                 break;
             }
-            const responseBytes = Buffer.from(
+            var message = pb_message.Response.decode(new Uint8Array(
                 dataArray.buffer,
                 counter + HEADER_LENGTH_IN_BYTES,
                 response_length
-            );
-            var message = pb_message.Response.decode(responseBytes);
+            ));
             const [resolve, reject] =
                 this.promiseCallbackFunctions[message.callbackIdx];
             this.availableCallbackSlots.push(message.callbackIdx);
@@ -69,6 +68,9 @@ export class SocketConnection {
                 reject(message.closingError);
                 this.dispose();
             } else if (message.respPointer) {
+                // let pointer_view = new DataView(message.respPointer.buffer, message.respPointer.byteOffset, message.respPointer.length);
+                // const pointer = pointer_view.getBigUint64(0, true);
+                // resolve(valueFromPointer(pointer));
                 const pointer = message.respPointer;
                 resolve(valueFromPointer(BigInt(pointer.toString())));
             } else {
