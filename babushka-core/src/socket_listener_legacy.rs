@@ -1,13 +1,16 @@
 use super::{headers_legacy::*, rotating_buffer_legacy::RotatingBuffer};
+use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::BufMut;
+use dispose::{Disposable, Dispose};
 use futures::stream::StreamExt;
 use num_traits::ToPrimitive;
 use redis::aio::MultiplexedConnection;
-use redis::{AsyncCommands, RedisResult};
+use redis::{AsyncCommands, RedisResult, Value};
 use redis::{Client, RedisError};
 use signal_hook::consts::signal::*;
 use signal_hook_tokio::Signals;
 use std::cell::Cell;
+use std::mem::size_of;
 use std::ops::Range;
 use std::rc::Rc;
 use std::str;
@@ -26,8 +29,22 @@ use PipeListeningResult::*;
 /// The socket file name
 pub const SOCKET_FILE_NAME: &str = "babushka-socket";
 
-/// struct containing all objects needed to read from a socket.
+/// struct containing all objects needed to bind to a socket and clean it.
 struct SocketListener {
+    socket_path: String,
+    cleanup_socket: bool,
+}
+
+impl Dispose for SocketListener {
+    fn dispose(self) {
+        if self.cleanup_socket {
+            close_socket(self.socket_path);
+        }
+    }
+}
+
+/// struct containing all objects needed to read from a unix stream.
+struct UnixStreamListener {
     read_socket: Rc<UnixStream>,
     rotating_buffer: RotatingBuffer,
 }
@@ -50,7 +67,7 @@ impl From<ClosingReason> for PipeListeningResult {
     }
 }
 
-impl SocketListener {
+impl UnixStreamListener {
     fn new(read_socket: Rc<UnixStream>) -> Self {
         // if the logger has been initialized by the user (external or internal) on info level this log will be shown
         logger_core::log(
@@ -59,7 +76,7 @@ impl SocketListener {
             "new socket listener initiated",
         );
         let rotating_buffer = RotatingBuffer::new(2, 65_536);
-        SocketListener {
+        Self {
             read_socket,
             rotating_buffer,
         }
@@ -168,9 +185,10 @@ fn write_null_response_header(
     )
 }
 
-fn write_slice_to_output(accumulated_outputs: &Cell<Vec<u8>>, bytes_to_write: &[u8]) {
+fn write_pointer_to_output<T>(accumulated_outputs: &Cell<Vec<u8>>, pointer_to_write: *mut T) {
     let mut vec = accumulated_outputs.take();
-    vec.extend_from_slice(bytes_to_write);
+    vec.write_u64::<LittleEndian>(pointer_to_write as u64)
+        .unwrap();
     accumulated_outputs.set(vec);
 }
 
@@ -190,6 +208,28 @@ async fn send_set_request(
     Ok(())
 }
 
+fn write_redis_value(
+    value: Value,
+    callback_index: u32,
+    writer: &Rc<Writer>,
+) -> Result<(), io::Error> {
+    if let Value::Nil = value {
+        // Since null values don't require any additional data, they can be sent without any extra effort.
+        write_null_response_header(&writer.accumulated_outputs, callback_index)?;
+    } else {
+        write_response_header(
+            &writer.accumulated_outputs,
+            callback_index,
+            ResponseType::Value,
+            HEADER_END + size_of::<usize>(),
+        )?;
+        // Move the value to the heap and leak it. The wrapper should use `Box::from_raw` to recreate the box, use the value, and drop the allocation.
+        let pointer = Box::leak(Box::new(value));
+        write_pointer_to_output(&writer.accumulated_outputs, pointer);
+    }
+    Ok(())
+}
+
 async fn send_get_request(
     vec: SharedBuffer,
     key_range: Range<usize>,
@@ -197,22 +237,8 @@ async fn send_get_request(
     mut connection: MultiplexedConnection,
     writer: Rc<Writer>,
 ) -> RedisResult<()> {
-    let result: Option<Vec<u8>> = connection.get(&vec[key_range]).await?;
-    match result {
-        Some(result_bytes) => {
-            let length = HEADER_END + result_bytes.len();
-            write_response_header(
-                &writer.accumulated_outputs,
-                callback_index,
-                ResponseType::Value,
-                length,
-            )?;
-            write_slice_to_output(&writer.accumulated_outputs, &result_bytes);
-        }
-        None => {
-            write_null_response_header(&writer.accumulated_outputs, callback_index)?;
-        }
-    };
+    let result: Value = connection.get(&vec[key_range]).await?;
+    write_redis_value(result, callback_index, &writer)?;
     write_to_output(&writer).await;
     Ok(())
 }
@@ -266,9 +292,7 @@ async fn write_error(
     writer: Rc<Writer>,
     response_type: ResponseType,
 ) {
-    let err_str = err.to_string();
-    let error_bytes = err_str.as_bytes();
-    let length = HEADER_END + error_bytes.len();
+    let length = HEADER_END + size_of::<usize>();
     write_response_header(
         &writer.accumulated_outputs,
         callback_index,
@@ -276,7 +300,11 @@ async fn write_error(
         length,
     )
     .expect("Failed writing error to vec");
-    write_slice_to_output(&writer.accumulated_outputs, error_bytes);
+    // Move the error string to the heap and leak it. The wrapper should use `Box::from_raw` to recreate the box, use the error string, and drop the allocation.
+    write_pointer_to_output(
+        &writer.accumulated_outputs,
+        Box::leak(Box::new(err.to_string())),
+    );
     write_to_output(&writer).await;
 }
 
@@ -293,8 +321,8 @@ async fn handle_requests(
     task::yield_now().await;
 }
 
-fn close_socket() {
-    std::fs::remove_file(get_socket_path()).expect("Failed to delete socket file");
+fn close_socket(socket_path: String) {
+    let _ = std::fs::remove_file(socket_path);
 }
 
 fn to_babushka_result<T, E: std::fmt::Display>(
@@ -336,7 +364,7 @@ async fn parse_address_create_conn(
 }
 
 async fn wait_for_server_address_create_conn(
-    client_listener: &mut SocketListener,
+    client_listener: &mut UnixStreamListener,
     writer: &Rc<Writer>,
 ) -> Result<MultiplexedConnection, BabushkaError> {
     // Wait for the server's address
@@ -379,7 +407,7 @@ async fn listen_on_client_stream(
     let socket = Rc::new(socket);
     // Spawn a new task to listen on this client's stream
     let write_lock = Mutex::new(());
-    let mut client_listener = SocketListener::new(socket.clone());
+    let mut client_listener = UnixStreamListener::new(socket.clone());
     let accumulated_outputs = Cell::new(Vec::new());
     let writer = Rc::new(Writer {
         socket,
@@ -414,50 +442,60 @@ async fn listen_on_client_stream(
     }
 }
 
-async fn listen_on_socket<InitCallback>(init_callback: InitCallback)
-where
-    InitCallback: FnOnce(Result<String, String>) + Send + 'static,
-{
-    // Bind to socket
-    let listener = match UnixListener::bind(get_socket_path()) {
-        Ok(listener) => listener,
-        Err(err) if err.kind() == AddrInUse => {
-            init_callback(Ok(get_socket_path()));
-            return;
+impl SocketListener {
+    fn new() -> Self {
+        SocketListener {
+            socket_path: get_socket_path(),
+            cleanup_socket: true,
         }
-        Err(err) => {
-            init_callback(Err(err.to_string()));
-            return;
-        }
-    };
-    let local = task::LocalSet::new();
-    let connected_clients = Arc::new(AtomicUsize::new(0));
-    let notify_close = Arc::new(Notify::new());
-    init_callback(Ok(get_socket_path()));
-    local.run_until(async move {
-        loop {
-            tokio::select! {
-                listen_v = listener.accept() => {
-                    if let Ok((stream, _addr)) = listen_v {
-                        // New client
-                        let cloned_close_notifier = notify_close.clone();
-                        let cloned_connected_clients = connected_clients.clone();
-                        cloned_connected_clients.fetch_add(1, Ordering::Relaxed);
-                        task::spawn_local(listen_on_client_stream(stream, cloned_close_notifier.clone(), cloned_connected_clients));
-                    } else if listen_v.is_err() {
-                        close_socket();
-                        return;
-                    }
-                },
-                // `notify_one` was called to indicate no more clients are connected,
-                // close the socket
-                _ = notify_close.notified() => {close_socket(); return;},
-                // Interrupt was received, close the socket
-                _ = handle_signals() => {close_socket(); return;}
+    }
+
+    pub(crate) async fn listen_on_socket<InitCallback>(&mut self, init_callback: InitCallback)
+    where
+        InitCallback: FnOnce(Result<String, RedisError>) + Send + 'static,
+    {
+        // Bind to socket
+        let listener = match UnixListener::bind(self.socket_path.clone()) {
+            Ok(listener) => listener,
+            Err(err) if err.kind() == AddrInUse => {
+                init_callback(Ok(self.socket_path.clone()));
+                // Don't cleanup the socket resources since the socket is being used
+                self.cleanup_socket = false;
+                return;
+            }
+            Err(err) => {
+                init_callback(Err(err.into()));
+                return;
             }
         };
-        })
-    .await;
+        let local = task::LocalSet::new();
+        let connected_clients = Arc::new(AtomicUsize::new(0));
+        let notify_close = Arc::new(Notify::new());
+        init_callback(Ok(self.socket_path.clone()));
+        local.run_until(async move {
+            loop {
+                tokio::select! {
+                    listen_v = listener.accept() => {
+                        if let Ok((stream, _addr)) = listen_v {
+                            // New client
+                            let cloned_close_notifier = notify_close.clone();
+                            let cloned_connected_clients = connected_clients.clone();
+                            cloned_connected_clients.fetch_add(1, Ordering::Relaxed);
+                            task::spawn_local(listen_on_client_stream(stream, cloned_close_notifier.clone(), cloned_connected_clients));
+                        } else if listen_v.is_err() {
+                            return
+                        }
+                    },
+                    // `notify_one` was called to indicate no more clients are connected,
+                    // close the socket
+                    _ = notify_close.notified() => continue, //TODO: socket listener shouldn't be closed, remove the notifier
+                    // Interrupt was received, close the socket
+                    _ = handle_signals() => return
+                }
+            };
+            })
+        .await;
+    }
 }
 
 #[derive(Debug)]
@@ -493,13 +531,19 @@ async fn handle_signals() {
     // Handle Unix signals
     let mut signals =
         Signals::new([SIGTERM, SIGQUIT, SIGINT, SIGHUP]).expect("Failed creating signals");
-    while let Some(signal) = signals.next().await {
-        match signal {
-            SIGTERM | SIGQUIT | SIGINT | SIGHUP => {
-                // Close the socket
-                close_socket();
+    loop {
+        if let Some(signal) = signals.next().await {
+            match signal {
+                SIGTERM | SIGQUIT | SIGINT | SIGHUP => {
+                    logger_core::log(
+                        logger_core::Level::Info,
+                        "connection",
+                        format!("Signal {signal:?} received"),
+                    );
+                    return;
+                }
+                _ => continue,
             }
-            sig => unreachable!("Received an unregistered signal `{}`", sig),
         }
     }
 }
@@ -509,7 +553,7 @@ async fn handle_signals() {
 ///
 /// # Arguments
 /// * `init_callback` - called when the socket listener fails to initialize, with the reason for the failure.
-pub fn start_socket_listener<InitCallback>(init_callback: InitCallback)
+pub fn start_legacy_socket_listener<InitCallback>(init_callback: InitCallback)
 where
     InitCallback: FnOnce(Result<String, String>) + Send + 'static,
 {
@@ -522,12 +566,10 @@ where
                 .build();
             match runtime {
                 Ok(runtime) => {
-                    runtime.block_on(listen_on_socket(init_callback));
+                    let mut listener = Disposable::new(SocketListener::new());
+                    runtime.block_on(listener.listen_on_socket(init_callback));
                 }
-                Err(err) => {
-                    close_socket();
-                    init_callback(Err(err.to_string()))
-                }
+                Err(err) => init_callback(Err(err.into())),
             };
         })
         .expect("Thread spawn failed. Cannot report error because callback was moved.");

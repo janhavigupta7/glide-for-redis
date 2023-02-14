@@ -7,7 +7,7 @@ use num_traits::FromPrimitive;
 use pb_message::{Request, Response};
 use protobuf::Message;
 use redis::aio::MultiplexedConnection;
-use redis::{AsyncCommands, RedisResult, Value};
+use redis::{AsyncCommands, RedisResult, Value, ErrorKind};
 use redis::{Client, RedisError};
 use signal_hook::consts::signal::*;
 use signal_hook_tokio::Signals;
@@ -153,9 +153,10 @@ async fn send_set_request(
     mut connection: MultiplexedConnection,
     writer: Rc<Writer>,
 ) -> RedisResult<()> {
-    let args = request.args.to_vec();
-    let result = connection.set(&args[0], &args[1]).await;
-    write_response(result, request.callback_idx, &writer, ResponseType::Value).await?;
+    let args = &request.args;
+    assert_eq!(args.len(), 2); // TODO: delete it in the chunks implementation
+    connection.set(&args[0], &args[1]).await?;
+    write_response(Ok(Value::Nil), request.callback_idx, &writer, ResponseType::Null).await?;
     Ok(())
 }
 
@@ -169,13 +170,12 @@ async fn write_response(
     response.callback_idx = callback_index;
     match resp_result {
         Ok(value) => {
-            if value != Value::Nil {
+            if  value != Value::Nil && response_type != ResponseType::Null {
                 // Since null values don't require any additional data, they can be sent without any extra effort.
                 // Move the value to the heap and leak it. The wrapper should use `Box::from_raw` to recreate the box, use the value, and drop the allocation.
                 let pointer = Box::leak(Box::new(value));
                 let raw_pointer = pointer as *mut redis::Value;
                 response.value = Some(pb_message::response::Value::RespPointer(raw_pointer as u64))
-                //write_pointer_to_output(&writer.accumulated_outputs, pointer);
             }
         }
         Err(err) => match response_type {
@@ -187,13 +187,21 @@ async fn write_response(
     }
 
     let mut vec = writer.accumulated_outputs.take();
-    let length = response.compute_size() as u32;
-    vec.put_u32_le(length);
-    vec.extend_from_slice(&response.write_to_bytes().unwrap());
-    // println!("Writing response {:?}, length = {}", &vec, length);
-    writer.accumulated_outputs.set(vec);
-    write_to_output(&writer).await;
-    Ok(())
+    let response_length = response.compute_size() as u32;
+    // Write the response's length to the buffer
+    vec.put_u32_le(response_length);
+    match &response.write_to_bytes() {
+        Ok(resp_bytes) => {
+            vec.extend_from_slice(resp_bytes);
+            writer.accumulated_outputs.set(vec);
+            write_to_output(&writer).await;
+            Ok(())
+        },
+        Err(err) => return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("failed to encode response: {err}"),
+        )),
+    }
 }
 
 async fn send_get_request(
@@ -201,6 +209,7 @@ async fn send_get_request(
     mut connection: MultiplexedConnection,
     writer: Rc<Writer>,
 ) -> RedisResult<()> {
+    assert_eq!(request.args.len(), 1);  // TODO: delete it in the chunks implementation
     let result = connection.get(&request.args.first().unwrap()).await;
     write_response(result, request.callback_idx, &writer, ResponseType::Value).await?;
     Ok(())
@@ -213,12 +222,23 @@ fn handle_request(
 ) {
     task::spawn_local(async move {
         let request = &whole_request.request;
-        let result = match FromPrimitive::from_u32(request.request_type.clone()).unwrap() {
+        let request_type = FromPrimitive::from_u32(request.request_type).unwrap_or(RequestType::InvalidRequest);
+        let result = match request_type {
             RequestType::GetString => send_get_request(request, connection, writer.clone()).await,
             RequestType::SetString => send_set_request(request, connection, writer.clone()).await,
             RequestType::ServerAddress => {
-                unreachable!("Server address can only be sent once")
-            }
+                Err(RedisError::from((
+                    ErrorKind::ClientError,
+                    "Server address can only be sent once",
+                )))
+            },
+            RequestType::InvalidRequest => {
+                Err(RedisError::from((
+                    ErrorKind::ClientError,
+                    "Recieved invalid request type",
+                    request.request_type.to_string()
+                )))
+            },
         };
         if let Err(err) = result {
             let _ = write_response(

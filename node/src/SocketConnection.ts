@@ -42,11 +42,11 @@ export class SocketConnection {
         let counter = 0;
         while (counter <= dataArray.byteLength - HEADER_LENGTH_IN_BYTES) {
             const header = new DataView(dataArray.buffer, counter, HEADER_LENGTH_IN_BYTES);
-            const length = header.getUint32(0, true);
-            if (length === 0) {
-                throw new Error("length 0");
+            const response_length = header.getUint32(0, true);
+            if (response_length === 0) {
+                throw new Error("received response length 0");
             }
-            if (counter + length + HEADER_LENGTH_IN_BYTES > dataArray.byteLength) {
+            if (counter + response_length + HEADER_LENGTH_IN_BYTES > dataArray.byteLength) {
                 this.remainingReadData = new Uint8Array(
                     dataArray.buffer,
                     counter,
@@ -57,7 +57,7 @@ export class SocketConnection {
             const responseBytes = Buffer.from(
                 dataArray.buffer,
                 counter + HEADER_LENGTH_IN_BYTES,
-                length
+                response_length
             );
             var message = pb_message.Response.decode(responseBytes);
             const [resolve, reject] =
@@ -74,7 +74,7 @@ export class SocketConnection {
             } else {
                 resolve(null);
             }
-            counter = counter + length + HEADER_LENGTH_IN_BYTES;
+            counter = counter + response_length + HEADER_LENGTH_IN_BYTES;
         }
 
         if (counter == dataArray.byteLength) {
@@ -215,7 +215,6 @@ export class SocketConnection {
             args: args
         });
         var request = pb_message.Request.encode(message).finish();
-        var decoded = pb_message.Request.decode(request);
         this.bufferedWriteRequests.push(request);
         if (this.writeInProgress) {
             return;

@@ -14,6 +14,8 @@ pub const HEADER_END: usize = MESSAGE_LENGTH_END;
 /// An enum representing the values of the request type field.
 #[derive(ToPrimitive, FromPrimitive)]
 pub enum RequestType {
+    /// Invalid request type
+    InvalidRequest = 0,
     /// Type of a server address request
     ServerAddress = 1,
     /// Type of a get string request.
