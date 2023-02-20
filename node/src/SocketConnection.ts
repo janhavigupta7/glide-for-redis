@@ -1,8 +1,9 @@
 import { BabushkaInternal } from "../";
 import * as net from "net";
 import { Logger } from "./Logger";
-import { stringFromPointer, valueFromPointer } from "babushka-rs-internal";
+import { valueFromPointer } from "babushka-rs-internal";
 import { pb_message } from "./ProtobufMessage";
+import { BufferWriter, Writer } from "protobufjs";
 
 const {
     StartSocketConnection,
@@ -28,10 +29,8 @@ export class SocketConnection {
         PromiseFunction
     ][] = [];
     private readonly availableCallbackSlots: number[] = [];
-    private readonly encoder = new TextEncoder();
     private backingReadBuffer = new ArrayBuffer(1024);
-    private backingWriteBuffer = new ArrayBuffer(1024);
-    private bufferedWriteRequests: Uint8Array[] = [];
+    private backingRequestsWriteBuffer = new BufferWriter();
     private writeInProgress = false;
     private remainingReadData: Uint8Array | undefined;
 
@@ -122,88 +121,15 @@ export class SocketConnection {
         );
     }
 
-    private writeHeaderToWriteBuffer(
-        length: number,
-        callbackIndex: number,
-        operationType: RequestType,
-        headerLength: number,
-        argLengths: number[],
-        offset: number
-    ) {
-        const headerView = new DataView(
-            this.backingWriteBuffer,
-            offset,
-            headerLength
-        );
-        headerView.setUint32(0, length, true);
-        headerView.setUint32(4, callbackIndex, true);
-        headerView.setUint32(8, operationType, true);
 
-        for (let i = 0; i < argLengths.length - 1; i++) {
-            const argLength = argLengths[i];
-            headerView.setUint32(
-                HEADER_LENGTH_IN_BYTES + 4 * i,
-                argLength,
-                true
-            );
-        }
-    }
-
-    private getHeaderLength(writeRequest: WriteRequest) {
-        return HEADER_LENGTH_IN_BYTES + 4 * (writeRequest.args.length - 1);
-    }
-
-    private lengthOfStrings(request: WriteRequest) {
-        return request.args.reduce((sum, arg) => sum + arg.length, 0);
-    }
-
-    private encodeStringToWriteBuffer(str: string, byteOffset: number): number {
-        const encodeResult = this.encoder.encodeInto(
-            str,
-            new Uint8Array(this.backingWriteBuffer, byteOffset)
-        );
-        return encodeResult.written ?? 0;
-    }
-
-    private getRequiredBufferLength(writeRequests: Uint8Array[]): number {
-        return writeRequests.reduce((sum, request) => {
-            return ( sum + request.byteLength + HEADER_LENGTH_IN_BYTES
-            );
-        }, 0);
-    }
-
-    private writeBufferedRequestsToSocket() {
+    private writePbBufferedRequestsToSocket() {
         this.writeInProgress = true;
-        const writeRequests = this.bufferedWriteRequests.splice(
-            0,
-            this.bufferedWriteRequests.length
-        );
-        const requiredBufferLength =
-            this.getRequiredBufferLength(writeRequests);
+        const requests = this.backingRequestsWriteBuffer.finish();
+        this.backingRequestsWriteBuffer.reset();
 
-        if (
-            !this.backingWriteBuffer ||
-            this.backingWriteBuffer.byteLength < requiredBufferLength
-        ) {
-            this.backingWriteBuffer = new ArrayBuffer(requiredBufferLength);
-        }
-        let cursor = 0;
-        for (const request of writeRequests) {
-            const headerView = new DataView(
-                this.backingWriteBuffer,
-                cursor,
-                HEADER_LENGTH_IN_BYTES
-            );
-            headerView.setUint32(0, request.byteLength, true);
-            let payloadView = new Uint8Array(this.backingWriteBuffer, cursor + HEADER_LENGTH_IN_BYTES, request.byteLength);
-            payloadView.set(request);
-            cursor += request.byteLength + HEADER_LENGTH_IN_BYTES;
-        }
-
-        const uint8Array = new Uint8Array(this.backingWriteBuffer, 0, cursor);
-        this.socket.write(uint8Array, undefined, () => {
-            if (this.bufferedWriteRequests.length > 0) {
-                this.writeBufferedRequestsToSocket();
+        this.socket.write(requests, undefined, () => {
+            if (this.backingRequestsWriteBuffer.len > 0) {
+                this.writePbBufferedRequestsToSocket();
             } else {
                 this.writeInProgress = false;
             }
@@ -216,12 +142,12 @@ export class SocketConnection {
             requestType: requestType,
             args: args
         });
-        var request = pb_message.Request.encode(message).finish();
-        this.bufferedWriteRequests.push(request);
+
+        pb_message.Request.encodeDelimited(message, this.backingRequestsWriteBuffer);
         if (this.writeInProgress) {
             return;
         }
-        this.writeBufferedRequestsToSocket();
+        this.writePbBufferedRequestsToSocket();
     }
 
     public get(key: string): Promise<string> {

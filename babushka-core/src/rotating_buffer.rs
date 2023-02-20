@@ -1,35 +1,14 @@
 use super::headers::*;
-use byteorder::{LittleEndian, ReadBytesExt};
+use byteorder::LittleEndian;
 use lifeguard::{pool, Pool, StartingSize, Supplier};
 use pb_message::Request;
 use protobuf::Message;
 use std::{
     io,
     mem,
-    ops::Range,
     rc::Rc,
 };
-
-/// An enum representing a request during the parsing phase.
-pub(super) enum RequestState {
-    /// Parsing completed.
-    Complete {
-        request: WholeRequest,
-        /// The index of the beginning of the next request.
-        cursor_next: usize,
-    },
-    /// Parsing failed because the buffer didn't contain the full header of the request.
-    PartialNoHeader,
-    /// Parsing failed because the buffer didn't contain the body of the request.
-    PartialWithHeader {
-        /// Length of the request.
-        length: usize,
-    },
-}
-
-pub(super) struct ReadHeader {
-    pub(super) length: usize,
-}
+use integer_encoding::VarInt;
 
 /// An object handling a arranging read buffers, and parsing the data in the buffers into requests.
 pub(super) struct RotatingBuffer {
@@ -58,45 +37,6 @@ impl RotatingBuffer {
         Self::with_pool(pool)
     }
 
-    fn read_header(input: &[u8]) -> io::Result<ReadHeader> {
-        let length = (&input[..MESSAGE_LENGTH_END]).read_u32::<LittleEndian>()? as usize;
-
-        Ok(ReadHeader { length })
-    }
-
-    fn parse_request(
-        &self,
-        request_range: &Range<usize>,
-        buffer: SharedBuffer,
-    ) -> io::Result<RequestState> {
-        if request_range.len() < HEADER_END {
-            return Ok(RequestState::PartialNoHeader);
-        }
-        let header = Self::read_header(&buffer[request_range.start..request_range.end])?;
-        let header_end = request_range.start + HEADER_END;
-        let next = request_range.start + HEADER_END + header.length;
-        if next > request_range.end {
-            return Ok(RequestState::PartialWithHeader {
-                length: header.length + HEADER_END,
-            });
-        }
-        
-        match Request::parse_from_bytes(&buffer[header_end..header_end + header.length]) {
-            Ok(request) => {        
-                let request = WholeRequest { request };
-                Ok(RequestState::Complete {
-                    request,
-                    cursor_next: next,
-                })
-            },
-            Err(err) => {
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    format!("failed to parse request: {err}"),
-                ))
-            }
-        }
-    }
 
     /// Adjusts the current buffer size so that it will fit required_length.
     fn match_capacity(&mut self, required_length: usize) {
@@ -126,34 +66,39 @@ impl RotatingBuffer {
 
     /// Parses the requests in the buffer.
     pub(super) fn get_requests(&mut self) -> io::Result<Vec<WholeRequest>> {
-        let mut cursor = 0;
         // We replace the buffer on every call, because we want to prevent the next read from affecting existing results.
         let new_buffer = self.get_new_buffer();
-        let buffer = Rc::new(mem::replace(&mut self.current_read_buffer, new_buffer));
-        let mut results = vec![];
-        let buffer_length = buffer.len();
-        while cursor < buffer_length {
-            let parse_result = self.parse_request(&(cursor..buffer_length), buffer.clone())?;
-            match parse_result {
-                RequestState::Complete {
-                    request,
-                    cursor_next: next,
-                } => {
-                    results.push(request);
-                    cursor = next;
+        let backing_buffer = Rc::new(mem::replace(&mut self.current_read_buffer, new_buffer));
+        let buffer = backing_buffer.as_slice();
+        let mut results: Vec<WholeRequest> = vec![];
+        let mut prev_position = 0;
+        let buffer_len = backing_buffer.len();
+        while prev_position < buffer_len {
+            if let Some((request_len, bytes_read)) = u32::decode_var(&buffer[prev_position..]) {
+                let start_pos = prev_position + bytes_read;
+                if (start_pos + request_len as usize) > buffer_len {
+                    break;
+                } else {
+                    match Request::parse_from_bytes(&buffer[start_pos..start_pos + request_len as usize]) {
+                        Ok(request) => {        
+                            prev_position += request_len as usize + bytes_read;
+                            results.push(WholeRequest{request});                            },
+                        Err(_) => {
+                            break;
+                        }
+                    }
                 }
-                RequestState::PartialNoHeader => {
-                    self.copy_from_old_buffer(buffer, None, cursor);
-                    return Ok(results);
-                }
-                RequestState::PartialWithHeader { length } => {
-                    self.copy_from_old_buffer(buffer, Some(length), cursor);
-                    return Ok(results);
-                }
-            };
-        }
+            } else {
+                break;
+            }
 
-        self.current_read_buffer.clear();
+        }
+            
+        if prev_position as usize != backing_buffer.len() {
+            self.copy_from_old_buffer(backing_buffer.clone(), None, prev_position as usize);            
+        } else {
+            self.current_read_buffer.clear();
+        }
         Ok(results)
     }
 

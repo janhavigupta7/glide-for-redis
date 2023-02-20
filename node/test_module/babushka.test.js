@@ -2,6 +2,8 @@ import { AsyncClient, SocketConnection, setLoggerConfig } from "..";
 import RedisServer from "redis-server";
 import FreePort from "find-free-port";
 import { v4 as uuidv4 } from "uuid";
+import { pb_message } from "../ProtobufMessage";
+import protobuf, { BufferWriter, BufferReader } from "protobufjs";
 
 function OpenServerAndExecute(port, action) {
     return new Promise((resolve, reject) => {
@@ -137,6 +139,39 @@ describe("NAPI client", () => {
 });
 
 describe("socket client", () => {
+    it("test protobuf encode/decode delimited", () => {
+        const writer = new BufferWriter();
+        var request = {
+            callbackIdx: 1,
+            requestType: 1,
+            args: [""]
+        };
+        var request2 = {
+            callbackIdx: 3,
+            requestType: 4,
+            args: ["bar3", "bar4"]
+        };
+
+        let req = pb_message.Request.encodeDelimited(request, writer).finish();
+        console.log("req size=", req.length);
+        pb_message.Request.encodeDelimited(request2, writer);
+        console.log("", writer);
+
+        const buffer = writer.finish();
+        console.log("", buffer);
+        const reader = new BufferReader(buffer);
+      
+        let dec_msg1 = pb_message.Request.decodeDelimited(reader);
+        expect(dec_msg1.callbackIdx).toEqual(1);
+        expect(dec_msg1.requestType).toEqual(2);
+        expect(dec_msg1.args).toEqual(["bar1", "bar2"]);
+
+        let dec_msg2 = pb_message.Request.decodeDelimited(reader);
+        expect(dec_msg2.callbackIdx).toEqual(3);
+        expect(dec_msg2.requestType).toEqual(4);
+        expect(dec_msg2.args).toEqual(["bar3", "bar4"]);
+    });
+
     it("set and get flow works", async () => {
         const port = await FreePort(3000).then(([free_port]) => free_port);
         await OpenServerAndExecute(port, async () => {
