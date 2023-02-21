@@ -1,5 +1,4 @@
 use super::headers::*;
-use byteorder::LittleEndian;
 use lifeguard::{pool, Pool, StartingSize, Supplier};
 use pb_message::Request;
 use protobuf::Message;
@@ -111,51 +110,18 @@ impl RotatingBuffer {
 #[cfg(test)]
 mod tests {
     use std::io::Write;
-    use byteorder::WriteBytesExt;
     use super::*;
-
-    // fn write_message(
-    //     rotating_buffer: &mut RotatingBuffer,
-    //     length: usize,
-    //     callback_index: u32,
-    //     request_type: u32,
-    //     key_length: Option<usize>,
-    // ) {
-    //     let buffer = rotating_buffer.current_buffer();
-    //     let capacity = buffer.capacity();
-    //     let initial_buffer_length = buffer.len();
-    //     rotating_buffer.write_to_buffer(length as u32);
-    //     rotating_buffer.write_to_buffer(callback_index);
-    //     rotating_buffer.write_to_buffer(request_type);
-    //     if let Some(key_length) = key_length {
-    //         rotating_buffer.write_to_buffer(key_length as u32);
-    //     }
-    //     if capacity > rotating_buffer.current_read_buffer.len() {
-    //         let buffer = rotating_buffer.current_buffer();
-    //         let mut message = vec![0_u8; length + initial_buffer_length - buffer.len()];
-    //         buffer.append(&mut message);
-    //     }
-    // }
-
-    // fn write_get_message(rotating_buffer: &mut RotatingBuffer, length: usize, callback_index: u32) {
-    //     write_message(
-    //         rotating_buffer,
-    //         length,
-    //         callback_index,
-    //         RequestType::GetString.to_u32().unwrap(),
-    //         None,
-    //     );
-    // }
+    use rand::{Rng, distributions::Alphanumeric};
 
     fn write_header(
         buffer: &mut Vec<u8>,
-        length: usize,
+        length: u32,
     ) {
-        buffer.write_u32::<LittleEndian>(length as u32).unwrap();
+        let mut varint = u32::encode_var_vec(length);
+        buffer.append(&mut varint);
+        }
 
-    }
-
-    fn create_request(buffer: &mut Vec<u8>, callback_index: u32, args: Vec<String>, request_type: u32) -> Request {
+    fn create_request(callback_index: u32, args: Vec<String>, request_type: u32) -> Request {
         let mut request = Request::new();
         request.callback_idx = callback_index;
         request.request_type = request_type;
@@ -165,18 +131,10 @@ mod tests {
 
     fn write_message(rotating_buffer: &mut RotatingBuffer, callback_index: u32, args: Vec<String>, request_type: u32) {
         let buffer = rotating_buffer.current_buffer();
-        let capacity = buffer.capacity();
-        let initial_buffer_length = buffer.len();
-        let request = create_request(buffer, callback_index, args, request_type);
+        let request = create_request(callback_index, args, request_type);
         let message_length = request.compute_size() as usize;
-
-        write_header(buffer, message_length);
+        write_header(buffer, message_length as u32);
         let _ = buffer.write_all(&request.write_to_bytes().unwrap());
-        if capacity > rotating_buffer.current_read_buffer.len() {
-            let buffer = rotating_buffer.current_buffer();
-            let mut message = vec![0_u8; message_length + initial_buffer_length - buffer.len()];
-            buffer.append(&mut message);
-        }
     }
 
     fn write_get(rotating_buffer: &mut RotatingBuffer, callback_index: u32, key: &str) {
@@ -190,20 +148,6 @@ mod tests {
             RequestType::SetString as u32
         );
     }
-    // fn write_set_message(
-    //     rotating_buffer: &mut RotatingBuffer,
-    //     length: usize,
-    //     callback_index: u32,
-    //     key_length: usize,
-    // ) {
-    //     write_message(
-    //         rotating_buffer,
-    //         length,
-    //         callback_index,
-    //         RequestType::SetString.to_u32().unwrap(),
-    //         Some(key_length),
-    //     );
-    // }
 
     fn assert_request(request: &Request, expected_type: u32, expected_index: u32, expected_args: Vec<String>) {
         assert_eq!(
@@ -213,6 +157,15 @@ mod tests {
         assert_eq!(request.callback_idx, expected_index);
         assert_eq!(request.args, expected_args);
     }
+
+    fn generate_random_string(length: usize) -> String {
+        rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(length)
+            .map(char::from)
+            .collect() 
+    }
+
     #[test]
     fn get_right_sized_buffer() {
         let mut rotating_buffer = RotatingBuffer::new(1, 128);
@@ -229,7 +182,7 @@ mod tests {
         let requests = rotating_buffer.get_requests().unwrap();
         assert_eq!(requests.len(), 2);
         assert_request(&requests[0].request, RequestType::GetString as u32, 100, vec!["key".to_string()]);
-        assert_request(&requests[0].request, RequestType::SetString as u32, 100, vec!["key".to_string(), "value".to_string()]);
+        assert_request(&requests[1].request, RequestType::SetString as u32, 5, vec!["key".to_string(), "value".to_string()]);
     }
 
     #[test]
@@ -246,13 +199,12 @@ mod tests {
 
         let requests = rotating_buffer.get_requests().unwrap();
         assert_eq!(requests.len(), 1);
-        assert_request(&requests[0].request, RequestType::SetString as u32, 100, vec!["key".to_string(), "value".to_string()]);
+        assert_request(&requests[0].request, RequestType::SetString as u32, 5, vec!["key".to_string(), "value".to_string()]);
     }
 
     #[test]
     fn next_write_doesnt_affect_values() {
         const BUFFER_SIZE: u32 = 16;
-        const MESSAGE_LENGTH: usize = 16;
         let mut rotating_buffer = RotatingBuffer::new(1, BUFFER_SIZE as usize);
         write_get(&mut rotating_buffer, 100, "key");
 
@@ -268,102 +220,76 @@ mod tests {
         assert_request(&requests[0].request, RequestType::GetString as u32, 100, vec!["key".to_string()]);
     }
 
-    // #[test]
-    // fn copy_header_and_partial_message_to_next_buffer() {
-    //     const NUM_OF_MESSAGE_BYTES: usize = 2;
-    //     let mut rotating_buffer = RotatingBuffer::new(1, 24);
-    //     let buffer = rotating_buffer.current_buffer();
-    //     write_get(&mut rotating_buffer, 100, "key1");
-    //     //write_get_message(&mut rotating_buffer, FIRST_MESSAGE_LENGTH, 100);
-    //     let request = create_request(buffer, 101, vec!["key2".to_string()], RequestType::GetString as u32);
-    //     let request_bytes = request.write_to_bytes().unwrap();
-    //     let second_message_length = request.compute_size() as usize;
-    //     write_header(rotating_buffer.current_buffer(), second_message_length);
-    //     let _ = buffer.append(&mut request_bytes[..NUM_OF_MESSAGE_BYTES].into());
-    //     let requests = rotating_buffer.get_requests().unwrap();
-    //     assert_eq!(requests.len(), 1);
-    //     assert_request(&requests[0].request, RequestType::GetString as u32, 100, vec!["key1".to_string()]);
-    //     let buffer = rotating_buffer.current_buffer();
-    //     assert_eq!(buffer.len(), HEADER_END);
-    //     let _ = buffer.append(&mut request_bytes[NUM_OF_MESSAGE_BYTES..].into());
-    //     let requests = rotating_buffer.get_requests().unwrap();
-    //     assert_eq!(requests.len(), 1);
-    //     assert_request(&requests[0].request, RequestType::GetString as u32, 101, vec!["key2".to_string()]);
-    // }
+    #[test]
+    fn copy_full_message_and_a_second_header_with_partial_message_to_next_buffer() {
+        const NUM_OF_MESSAGE_BYTES: usize = 2;
+        let mut rotating_buffer = RotatingBuffer::new(1, 24);
+        write_get(&mut rotating_buffer, 100, "key1");
+        //write_get_message(&mut rotating_buffer, FIRST_MESSAGE_LENGTH, 100);
+        let request = create_request(101, vec!["key2".to_string()], RequestType::GetString as u32);
+        let request_bytes = request.write_to_bytes().unwrap();
+        let second_message_length = request.compute_size() as u32;
+        let mut buffer = rotating_buffer.current_buffer();
+        write_header(&mut buffer, second_message_length as u32);
+        let _ = buffer.append(&mut request_bytes[..NUM_OF_MESSAGE_BYTES].into());
+        let requests = rotating_buffer.get_requests().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_request(&requests[0].request, RequestType::GetString as u32, 100, vec!["key1".to_string()]);
+        let buffer = rotating_buffer.current_buffer();
+        assert_eq!(buffer.len(), NUM_OF_MESSAGE_BYTES + u32::required_space(second_message_length));
+        let _ = buffer.append(&mut request_bytes[NUM_OF_MESSAGE_BYTES..].into());
+        let requests = rotating_buffer.get_requests().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_request(&requests[0].request, RequestType::GetString as u32, 101, vec!["key2".to_string()]);
+    }
+    #[test]
+    fn copy_partial_header_to_buffer() {
+        const NUM_OF_HEADER_BYTES: usize = 1;
+        const KEY_LENGTH: usize = 10000;
+        let mut rotating_buffer = RotatingBuffer::new(1, 24);
+        let buffer = rotating_buffer.current_buffer();
+        let key = generate_random_string(KEY_LENGTH);
+        let required_varint_length = u32::required_space(KEY_LENGTH as u32);
+        assert!(required_varint_length > 1); // so we could split the write of the varint
+        let request = create_request(100, vec![key.clone()], RequestType::GetString as u32);
+        let mut request_bytes = request.write_to_bytes().unwrap();
+        let message_length = request.compute_size() as u32;
+        let varint = u32::encode_var_vec(message_length);
+        let _ = buffer.append(&mut varint[..NUM_OF_HEADER_BYTES].into());
+        let requests = rotating_buffer.get_requests().unwrap();
+        assert_eq!(requests.len(), 0);
+        let buffer = rotating_buffer.current_buffer();
+        let _ = buffer.append(&mut varint[NUM_OF_HEADER_BYTES..].into());
+        let _ = buffer.append(&mut request_bytes);
+        let requests = rotating_buffer.get_requests().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_request(&requests[0].request, RequestType::GetString as u32, 100, vec![key.clone()]);
+    }
 
-    // #[test]
-    // fn copy_full_message_to_next_buffer_and_increase_buffer_size() {
-    //     const FIRST_MESSAGE_LENGTH: usize = 16;
-    //     const SECOND_MESSAGE_LENGTH: usize = 32;
-    //     const BUFFER_SIZE: usize = SECOND_MESSAGE_LENGTH - 4;
-    //     let mut rotating_buffer = RotatingBuffer::new(1, BUFFER_SIZE);
-    //     write_get(&mut rotating_buffer, 100, "key");
-
-    //     //write_get_message(&mut rotating_buffer, FIRST_MESSAGE_LENGTH, 100);
-    //     rotating_buffer.write_to_buffer(SECOND_MESSAGE_LENGTH as u32); // 2nd message length
-    //     rotating_buffer.write_to_buffer(5); // 2nd message callback index
-    //     rotating_buffer.write_to_buffer(RequestType::SetString as u32); // 2nd message operation type
-    //     let requests = rotating_buffer.get_requests().unwrap();
-    //     assert_eq!(requests.len(), 1);
-    //     assert_eq!(
-    //         requests[0].request_type,
-    //         RequestRanges::Get {
-    //             key: (HEADER_END..FIRST_MESSAGE_LENGTH)
-    //         }
-    //     );
-    //     assert_eq!(requests[0].callback_index, 100);
-
-    //     rotating_buffer.write_to_buffer(8); // 2nd message key length
-    //     let buffer = rotating_buffer.current_buffer();
-    //     assert_eq!(buffer.len(), HEADER_WITH_KEY_LENGTH_END);
-    //     let mut message = vec![0_u8; SECOND_MESSAGE_LENGTH - buffer.len()];
-    //     buffer.append(&mut message);
-    //     assert_eq!(buffer.len(), SECOND_MESSAGE_LENGTH);
-    //     let requests = rotating_buffer.get_requests().unwrap();
-    //     assert_eq!(requests.len(), 1);
-    //     assert_eq!(
-    //         requests[0].request_type,
-    //         RequestRanges::Set {
-    //             key: (HEADER_WITH_KEY_LENGTH_END..24),
-    //             value: (24..32)
-    //         }
-    //     );
-    //     assert_eq!(requests[0].callback_index, 5);
-    // }
-
-    // #[test]
-    // fn copy_partial_header_message_to_next_buffer_and_then_increase_size() {
-    //     const FIRST_MESSAGE_LENGTH: usize = 16;
-    //     const SECOND_MESSAGE_LENGTH: usize = 40;
-    //     const BUFFER_SIZE: usize = SECOND_MESSAGE_LENGTH - 12;
-    //     let mut rotating_buffer = RotatingBuffer::new(1, BUFFER_SIZE);
-    //     write_get_message(&mut rotating_buffer, FIRST_MESSAGE_LENGTH, 100);
-    //     rotating_buffer.write_to_buffer(SECOND_MESSAGE_LENGTH as u32); // 2nd message length
-    //     rotating_buffer.write_to_buffer(5); // 2nd message callback index
-    //     let requests = rotating_buffer.get_requests().unwrap();
-    //     assert_eq!(requests.len(), 1);
-    //     assert_eq!(
-    //         requests[0].request_type,
-    //         RequestRanges::Get {
-    //             key: (HEADER_END..FIRST_MESSAGE_LENGTH)
-    //         }
-    //     );
-    //     assert_eq!(requests[0].callback_index, 100);
-
-    //     rotating_buffer.write_to_buffer(RequestType::SetString as u32); // 2nd message operation type
-    //     rotating_buffer.write_to_buffer(8); // 2nd message key length
-    //     let buffer = rotating_buffer.current_buffer();
-    //     let mut message = vec![0_u8; SECOND_MESSAGE_LENGTH - buffer.len()];
-    //     buffer.append(&mut message);
-    //     let requests = rotating_buffer.get_requests().unwrap();
-    //     assert_eq!(requests.len(), 1);
-    //     assert_eq!(
-    //         requests[0].request_type,
-    //         RequestRanges::Set {
-    //             key: (HEADER_WITH_KEY_LENGTH_END..24),
-    //             value: (24..SECOND_MESSAGE_LENGTH)
-    //         }
-    //     );
-    //     assert_eq!(requests[0].callback_index, 5);
-    // }
+    #[test]
+    fn copy_partial_header_to_buffer_after_a_full_message() {
+        const NUM_OF_HEADER_BYTES: usize = 1;
+        const KEY_LENGTH: usize = 10000;
+        let mut rotating_buffer = RotatingBuffer::new(1, 24);
+        let key2 = generate_random_string(KEY_LENGTH);
+        let required_varint_length = u32::required_space(KEY_LENGTH as u32);
+        assert!(required_varint_length > 1); // so we could split the write of the varint
+        write_get(&mut rotating_buffer, 100, "key1");
+        let request = create_request(101, vec![key2.clone()], RequestType::GetString as u32);
+        let mut request_bytes = request.write_to_bytes().unwrap();
+        let message_length = request.compute_size() as u32;
+        let varint = u32::encode_var_vec(message_length);
+        let buffer = rotating_buffer.current_buffer();
+        let _ = buffer.append(&mut varint[..NUM_OF_HEADER_BYTES].into());
+        let requests = rotating_buffer.get_requests().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_request(&requests[0].request, RequestType::GetString as u32, 100, vec!["key1".to_string()]);
+        let buffer = rotating_buffer.current_buffer();
+        assert_eq!(buffer.len(), NUM_OF_HEADER_BYTES);
+        let _ = buffer.append(&mut varint[NUM_OF_HEADER_BYTES..].into());
+        let _ = buffer.append(&mut request_bytes);
+        let requests = rotating_buffer.get_requests().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_request(&requests[0].request, RequestType::GetString as u32, 101, vec![key2.clone()]);
+    }
 }
