@@ -23,6 +23,7 @@ use tokio::sync::Mutex;
 use tokio::task;
 use ClosingReason::*;
 use PipeListeningResult::*;
+use integer_encoding::VarInt;
 
 /// The socket file name
 pub const SOCKET_FILE_NAME: &str = "babushka-socket";
@@ -190,11 +191,14 @@ async fn write_response(
 
     let mut vec = writer.accumulated_outputs.take();
     let response_length = response.compute_size() as u32;
+    let required_header_space = u32::required_space(response_length);
+    let new_len = vec.len() + required_header_space;
+    vec.resize(new_len, 0_u8);
+    u32::encode_var(response_length, &mut vec[new_len-required_header_space..]);
     // Write the response's length to the buffer
-    vec.put_u32_le(response_length);
-    match &response.write_to_bytes() {
-        Ok(resp_bytes) => {
-            vec.extend_from_slice(resp_bytes);
+    match response.write_to_bytes() {
+        Ok(mut resp_bytes) => {
+            vec.append(&mut resp_bytes);
             writer.accumulated_outputs.set(vec);
             write_to_output(&writer).await;
             Ok(())

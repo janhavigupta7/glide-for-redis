@@ -102,7 +102,7 @@ impl RotatingBuffer {
     }
 
     pub(super) fn current_buffer(&mut self) -> &mut Vec<u8> {
-        debug_assert!(self.current_read_buffer.capacity() > self.current_read_buffer.len());
+        debug_assert!(self.current_read_buffer.capacity() >= self.current_read_buffer.len());
         &mut self.current_read_buffer
     }
 }
@@ -117,8 +117,10 @@ mod tests {
         buffer: &mut Vec<u8>,
         length: u32,
     ) {
-        let mut varint = u32::encode_var_vec(length);
-        buffer.append(&mut varint);
+        let required_space = u32::required_space(length);
+        let new_len = buffer.len() + required_space;
+        buffer.resize(new_len, 0_u8);
+        u32::encode_var(length, &mut buffer[new_len-required_space..]);
         }
 
     fn create_request(callback_index: u32, args: Vec<String>, request_type: u32) -> Request {
@@ -189,14 +191,10 @@ mod tests {
     fn repeating_requests_from_same_buffer() {
         const BUFFER_SIZE: usize = 50;
         let mut rotating_buffer = RotatingBuffer::new(1, BUFFER_SIZE);
-        //write_get_message(&mut rotating_buffer, FIRST_MESSAGE_LENGTH, 100);
         write_get(&mut rotating_buffer, 100, "key");
         let requests = rotating_buffer.get_requests().unwrap();
         assert_request(&requests[0].request, RequestType::GetString as u32, 100, vec!["key".to_string()]);
-
-
         write_set(&mut rotating_buffer, 5, "key", "value".to_string());
-
         let requests = rotating_buffer.get_requests().unwrap();
         assert_eq!(requests.len(), 1);
         assert_request(&requests[0].request, RequestType::SetString as u32, 5, vec!["key".to_string(), "value".to_string()]);
@@ -225,7 +223,6 @@ mod tests {
         const NUM_OF_MESSAGE_BYTES: usize = 2;
         let mut rotating_buffer = RotatingBuffer::new(1, 24);
         write_get(&mut rotating_buffer, 100, "key1");
-        //write_get_message(&mut rotating_buffer, FIRST_MESSAGE_LENGTH, 100);
         let request = create_request(101, vec!["key2".to_string()], RequestType::GetString as u32);
         let request_bytes = request.write_to_bytes().unwrap();
         let second_message_length = request.compute_size() as u32;

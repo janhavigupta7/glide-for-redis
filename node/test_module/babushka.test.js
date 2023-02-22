@@ -2,7 +2,7 @@ import { AsyncClient, SocketConnection, setLoggerConfig } from "..";
 import RedisServer from "redis-server";
 import FreePort from "find-free-port";
 import { v4 as uuidv4 } from "uuid";
-import { pb_message } from "../ProtobufMessage";
+import { pb_message } from "../src/ProtobufMessage";
 import protobuf, { BufferWriter, BufferReader } from "protobufjs";
 
 function OpenServerAndExecute(port, action) {
@@ -151,14 +151,8 @@ describe("socket client", () => {
             requestType: 4,
             args: ["bar3", "bar4"]
         };
-
-        let req = pb_message.Request.encodeDelimited(request, writer).finish();
-        console.log("req size=", req.length);
         pb_message.Request.encodeDelimited(request2, writer);
-        console.log("", writer);
-
         const buffer = writer.finish();
-        console.log("", buffer);
         const reader = new BufferReader(buffer);
       
         let dec_msg1 = pb_message.Request.decodeDelimited(reader);

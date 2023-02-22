@@ -4,13 +4,6 @@ use std::rc::Rc;
 include!(concat!(env!("OUT_DIR"), "/protobuf/mod.rs"));
 use pb_message::Request;
 
-/// Length of the message field in the request & response.
-pub const MESSAGE_LENGTH_FIELD_LENGTH: usize = 4;
-/// The index at the end of the message length field.
-pub const MESSAGE_LENGTH_END: usize = MESSAGE_LENGTH_FIELD_LENGTH;
-/// The length of the header.
-pub const HEADER_END: usize = MESSAGE_LENGTH_END;
-
 /// An enum representing the values of the request type field.
 #[derive(ToPrimitive, FromPrimitive)]
 pub enum RequestType {

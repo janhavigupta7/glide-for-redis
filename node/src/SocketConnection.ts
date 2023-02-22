@@ -3,24 +3,15 @@ import * as net from "net";
 import { Logger } from "./Logger";
 import { valueFromPointer } from "babushka-rs-internal";
 import { pb_message } from "./ProtobufMessage";
-import { BufferWriter, Writer } from "protobufjs";
+import { BufferWriter, Buffer, Reader } from "protobufjs";
 
 const {
     StartSocketConnection,
-    HEADER_LENGTH_IN_BYTES,
-    ResponseType,
     RequestType,
 } = BabushkaInternal;
 
 type RequestType = BabushkaInternal.RequestType;
-type ResponseType = BabushkaInternal.ResponseType;
 type PromiseFunction = (value?: any) => void;
-
-type WriteRequest = {
-    callbackIndex: number;
-    args: string[];
-    type: RequestType;
-};
 
 export class SocketConnection {
     private socket: net.Socket;
@@ -29,35 +20,19 @@ export class SocketConnection {
         PromiseFunction
     ][] = [];
     private readonly availableCallbackSlots: number[] = [];
-    private backingReadBuffer = new ArrayBuffer(1024);
     private backingRequestsWriteBuffer = new BufferWriter();
     private writeInProgress = false;
     private remainingReadData: Uint8Array | undefined;
 
     private handleReadData(data: Buffer) {
-        const dataArray = this.remainingReadData
-            ? this.concatBuffers(this.remainingReadData, data)
-            : new Uint8Array(data.buffer, data.byteOffset, data.length);
-        let counter = 0;
-        while (counter <= dataArray.byteLength - HEADER_LENGTH_IN_BYTES) {
-            const header = new DataView(dataArray.buffer, counter, HEADER_LENGTH_IN_BYTES);
-            const response_length = header.getUint32(0, true);
-            if (response_length === 0) {
-                throw new Error("received response length 0");
-            }
-            if (counter + response_length + HEADER_LENGTH_IN_BYTES > dataArray.byteLength) {
-                this.remainingReadData = new Uint8Array(
-                    dataArray.buffer,
-                    counter,
-                    dataArray.byteLength - counter
-                );
-                break;
-            }
-            var message = pb_message.Response.decode(new Uint8Array(
-                dataArray.buffer,
-                counter + HEADER_LENGTH_IN_BYTES,
-                response_length
-            ));
+        const buf = this.remainingReadData ? Buffer.concat([this.remainingReadData, data]) : data;
+
+        let lastPos = 0;
+        const reader = Reader.create(buf);
+        try {
+          while (reader.pos < reader.len) {
+            lastPos = reader.pos;
+            const message = pb_message.Response.decodeDelimited(reader);
             const [resolve, reject] =
                 this.promiseCallbackFunctions[message.callbackIdx];
             this.availableCallbackSlots.push(message.callbackIdx);
@@ -67,27 +42,17 @@ export class SocketConnection {
                 reject(message.closingError);
                 this.dispose();
             } else if (message.respPointer) {
-                // let pointer_view = new DataView(message.respPointer.buffer, message.respPointer.byteOffset, message.respPointer.length);
-                // const pointer = pointer_view.getBigUint64(0, true);
-                // resolve(valueFromPointer(pointer));
                 const pointer = message.respPointer;
                 resolve(valueFromPointer(BigInt(pointer.toString())));
             } else {
                 resolve(null);
             }
-            counter = counter + response_length + HEADER_LENGTH_IN_BYTES;
+          }
+          this.remainingReadData = undefined;
+        } catch (err) {
+          this.remainingReadData = buf.slice(lastPos);
         }
-
-        if (counter == dataArray.byteLength) {
-            this.remainingReadData = undefined;
-        } else {
-            this.remainingReadData = new Uint8Array(
-                dataArray.buffer,
-                counter,
-                dataArray.byteLength - counter
-            );
-        }
-    }
+      }
 
     private constructor(socket: net.Socket) {
         // if logger has been initialized by the external-user on info level this log will be shown
@@ -100,18 +65,6 @@ export class SocketConnection {
                 console.error(`Server closed: ${err}`);
                 this.dispose();
             });
-    }
-
-    private concatBuffers(priorBuffer: Uint8Array, data: Buffer): Uint8Array {
-        const requiredLength = priorBuffer.length + data.byteLength;
-
-        if (this.backingReadBuffer.byteLength < requiredLength) {
-            this.backingReadBuffer = new ArrayBuffer(requiredLength);
-        }
-        const array = new Uint8Array(this.backingReadBuffer, 0, requiredLength);
-        array.set(priorBuffer);
-        array.set(data, priorBuffer.byteLength);
-        return array;
     }
 
     private getCallbackIndex(): number {

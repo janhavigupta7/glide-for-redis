@@ -505,8 +505,6 @@ pub enum ClosingReason {
     ReadSocketClosed,
     /// The listener encounter an error it couldn't handle.
     UnhandledError(RedisError),
-    /// No clients left to handle, close the connection
-    AllConnectionsClosed,
 }
 
 /// Enum describing babushka errors

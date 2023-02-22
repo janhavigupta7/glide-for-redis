@@ -1,6 +1,5 @@
 use babushka::headers::{
-    RequestType, ResponseType, HEADER_END, MESSAGE_LENGTH_END,
-    MESSAGE_LENGTH_FIELD_LENGTH, 
+    RequestType, ResponseType, 
 };
 use babushka::*;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -14,6 +13,10 @@ use std::sync::{Arc, Mutex};
 use std::{os::unix::net::UnixStream, thread};
 mod utilities;
 use utilities::*;
+use integer_encoding::VarInt;
+
+/// Response header length approximation, including the length of the message and the callback index
+const APPROX_RESP_HEADER_LEN: usize = 3;
 
 #[cfg(test)]
 mod socket_listener {
@@ -41,7 +44,7 @@ mod socket_listener {
     }
     
     fn decode_response(buffer: &[u8], cursor: usize, message_length: usize) -> Response {
-        let header_end = cursor + HEADER_END;
+        let header_end = cursor;
         match Response::parse_from_bytes(&buffer[header_end..header_end + message_length]) {
             Ok(res) => res,
             Err(err) => {
@@ -61,8 +64,8 @@ mod socket_listener {
     }
 
     fn assert_response(buffer: &[u8], cursor: usize, expected_callback: u32, expected_value: Option<&[u8]>, response_type: ResponseType) -> Response {
-        let message_length = parse_header(&buffer);
-        let response = decode_response(&buffer, cursor, message_length as usize);
+        let (message_length, header_bytes) = parse_header(&buffer);
+        let response = decode_response(&buffer, cursor + header_bytes, message_length as usize);
         assert_eq!(response.callback_idx, expected_callback);
         match response.value {
             Some(pb_message::response::Value::RespPointer(pointer)) => {
@@ -80,41 +83,43 @@ mod socket_listener {
         };
         response
     }
+
     fn write_header(
         buffer: &mut Vec<u8>,
-        length: usize,
+        length: u32,
     ) {
-        buffer.write_u32::<LittleEndian>(length as u32).unwrap();
+        let required_space = u32::required_space(length);
+        let new_len = buffer.len() + required_space;
+        buffer.resize(new_len, 0_u8);
+        u32::encode_var(length, &mut buffer[new_len-required_space..]);
     }
 
-    fn write_request(buffer: &mut Vec<u8>, callback_index: u32, args: Vec<String>, request_type: u32) {
+    fn write_request(buffer: &mut Vec<u8>, callback_index: u32, args: Vec<String>, request_type: u32) -> u32 {
         let mut request = Request::new();
         request.callback_idx = callback_index;
         request.request_type = request_type;
         request.args = args;
-        let message_length = request.compute_size() as usize;
+        let message_length = request.compute_size() as u32;
 
         write_header(buffer, message_length);
         let _ = buffer.write_all(&request.write_to_bytes().unwrap());
+        message_length
     }
 
-    fn write_get(buffer: &mut Vec<u8>, callback_index: u32, key: &str) {
-        write_request(buffer, callback_index, vec![key.to_string()], RequestType::GetString as u32);
+    fn write_get(buffer: &mut Vec<u8>, callback_index: u32, key: &str) -> u32 {
+        write_request(buffer, callback_index, vec![key.to_string()], RequestType::GetString as u32)
     }
 
-    fn write_set(buffer: &mut Vec<u8>, callback_index: u32, key: &str, value: String) {
+    fn write_set(buffer: &mut Vec<u8>, callback_index: u32, key: &str, value: String) -> u32 {
         write_request(buffer,
             callback_index, 
             vec![key.to_string(), value],
             RequestType::SetString as u32
-        );
+        )
     }
 
-    fn parse_header(buffer: &[u8]) -> u32 {
-        let message_length = (&buffer[..MESSAGE_LENGTH_END])
-            .read_u32::<LittleEndian>()
-            .unwrap();
-        message_length
+    fn parse_header(buffer: &[u8]) -> (u32, usize) {
+        u32::decode_var(buffer).unwrap()
     }
 
 
@@ -126,8 +131,8 @@ mod socket_listener {
         } else {
             format!("redis://{address}")
         };
-        let message_length = address.len() + HEADER_END;
-        let mut buffer = Vec::with_capacity(message_length);
+        let approx_message_length = address.len() + APPROX_RESP_HEADER_LEN;
+        let mut buffer = Vec::with_capacity(approx_message_length);
         write_request(&mut buffer, CALLBACK_INDEX, vec![address], RequestType::ServerAddress as u32);
         let mut socket = socket.try_clone().unwrap();
         socket.write_all(&buffer).unwrap();
@@ -177,8 +182,8 @@ mod socket_listener {
         let key = "hello";
         let value = generate_random_string(VALUE_LENGTH);
         // Send a set request
-        let message_length = VALUE_LENGTH + key.len() + HEADER_END + MESSAGE_LENGTH_FIELD_LENGTH;
-        let mut buffer = Vec::with_capacity(message_length);
+        let approx_message_length = VALUE_LENGTH + key.len() + APPROX_RESP_HEADER_LEN;
+        let mut buffer = Vec::with_capacity(approx_message_length);
         write_set(&mut buffer, CALLBACK1_INDEX, key, value.clone());
         test_basics.socket.write_all(&buffer).unwrap();
 
@@ -189,7 +194,7 @@ mod socket_listener {
         write_get(&mut buffer, CALLBACK2_INDEX, key);
         test_basics.socket.write_all(&buffer).unwrap();
         // we set the length to a longer value, just in case we'll get more data - which is a failure for the test.
-        unsafe { buffer.set_len(message_length) };
+        unsafe { buffer.set_len(approx_message_length) };
         let _ = test_basics.socket.read(&mut buffer).unwrap();
         assert_response(&buffer, 0, CALLBACK2_INDEX, Some(value.as_bytes()), ResponseType::Value);
     }
@@ -199,7 +204,7 @@ mod socket_listener {
         const CALLBACK_INDEX: u32 = 99;
         let mut test_basics = setup_test_basics(use_tls);
         let key = "hello";
-        let mut buffer = Vec::with_capacity(HEADER_END);
+        let mut buffer = Vec::with_capacity(key.len() * 2);
         write_get(&mut buffer, CALLBACK_INDEX, key);
         test_basics.socket.write_all(&buffer).unwrap();
 
@@ -215,8 +220,8 @@ mod socket_listener {
         let key = "a";
         let request_type = u32::MAX; // here we send an erroneous enum
         // Send a set request
-        let message_length = HEADER_END + key.len();
-        let mut buffer = Vec::with_capacity(message_length);
+        let approx_message_length = key.len() + APPROX_RESP_HEADER_LEN;
+        let mut buffer = Vec::with_capacity(approx_message_length);
         write_request(&mut buffer, CALLBACK_INDEX, vec![key.to_string()], request_type);
         test_basics.socket.write_all(&buffer).unwrap();
         let mut buffer = [0; 50];
@@ -235,8 +240,8 @@ mod socket_listener {
         let key = "hello";
         let value = generate_random_string(VALUE_LENGTH);
         // Send a set request
-        let message_length = VALUE_LENGTH + key.len() + HEADER_END + MESSAGE_LENGTH_FIELD_LENGTH;
-        let mut buffer = Vec::with_capacity(message_length);
+        let approx_message_length = VALUE_LENGTH + key.len() + u32::required_space(VALUE_LENGTH as u32) + APPROX_RESP_HEADER_LEN;
+        let mut buffer = Vec::with_capacity(approx_message_length);
         write_set(&mut buffer, CALLBACK1_INDEX, key, value.clone());
         test_basics.socket.write_all(&buffer).unwrap();
 
@@ -247,9 +252,10 @@ mod socket_listener {
         write_get(&mut buffer, CALLBACK2_INDEX, key);
         test_basics.socket.write_all(&buffer).unwrap();
 
-        let expected_length = size_of::<usize>() + HEADER_END;
+        let response_header_length = u32::required_space(size_of::<usize>() as u32);
+        let expected_length = size_of::<usize>() + response_header_length + 2; // 2 bytes for callbackIdx and value type
         // we set the length to a longer value, just in case we'll get more data - which is a failure for the test.
-        unsafe { buffer.set_len(message_length) };
+        unsafe { buffer.set_len(approx_message_length) };
         let mut size = 0;
         while size < expected_length {
             let next_read = test_basics.socket.read(&mut buffer[size..]).unwrap();
@@ -283,21 +289,21 @@ mod socket_listener {
             let mut read_socket = test_basics.socket.try_clone().unwrap();
             scope.spawn(move || {
                 let mut received_callbacks = 0;
-                let mut buffer = vec![0_u8; 2 * (VALUE_LENGTH + 2 * HEADER_END)];
+                let mut buffer = vec![0_u8; 2 * (VALUE_LENGTH + 2 * APPROX_RESP_HEADER_LEN)];
                 let mut next_start = 0;
                 while received_callbacks < NUMBER_OF_THREADS * 2 {
                     let size = read_socket.read(&mut buffer[next_start..]).unwrap();
                     let mut cursor = 0;
                     while cursor < size {
-                        let length = parse_header(&buffer[cursor..cursor + HEADER_END]);
-                        let length = length as usize;
+                        let (request_len, header_bytes) = parse_header(&buffer[cursor..cursor + APPROX_RESP_HEADER_LEN]);
+                        let length = request_len as usize;
 
-                        if cursor + length > size + next_start {
+                        if cursor + header_bytes + length > size + next_start {
                             break;
                         }
 
                         {
-                            let response = decode_response(&buffer, cursor, length as usize);
+                            let response = decode_response(&buffer, cursor + header_bytes, length);
                             let callback_index = response.callback_idx as usize;
                             let mut results = results_for_read.lock().unwrap();
                             match response.value {
@@ -317,14 +323,14 @@ mod socket_listener {
                             };
                         }
                 
-                        cursor += length + 4;
+                        cursor += length + header_bytes;
                         received_callbacks += 1;
                     }
 
                     let save_size = next_start + size - cursor;
                     next_start = save_size;
                     if next_start > 0 {
-                        let mut new_buffer = vec![0_u8; 2 * VALUE_LENGTH + 4 * HEADER_END];
+                        let mut new_buffer = vec![0_u8; 2 * VALUE_LENGTH + 4 * APPROX_RESP_HEADER_LEN];
                         let slice = &buffer[cursor..cursor + save_size];
                         let iter = slice.iter().copied();
                         new_buffer.splice(..save_size, iter);
@@ -348,9 +354,9 @@ mod socket_listener {
                     }
 
                     // Send a set request
-                    let message_length =
-                        VALUE_LENGTH + key.len() + HEADER_END + MESSAGE_LENGTH_FIELD_LENGTH;
-                    let mut buffer = Vec::with_capacity(message_length + 100);
+                    let approx_message_length =
+                        VALUE_LENGTH + key.len() + APPROX_RESP_HEADER_LEN;
+                    let mut buffer = Vec::with_capacity(approx_message_length);
                     write_set(&mut buffer, index as u32, &key, value);
                     {
                         let _guard = cloned_lock.lock().unwrap();
@@ -372,7 +378,5 @@ mod socket_listener {
         for i in 0..NUMBER_OF_THREADS {
             assert_eq!(State::ReceivedValue, results[i+1]);
         }
-
-        thread::sleep(std::time::Duration::from_secs(1)); // TODO: delete this, find a better way to gracefully close the server thread
     }
 }
