@@ -2,10 +2,6 @@ use babushka::headers::{
     RequestType, ResponseType, 
 };
 use babushka::*;
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use num_traits::{FromPrimitive, ToPrimitive};
-use rand::{distributions::Standard, thread_rng, Rng};
-use ntest::timeout;
 use rand::Rng;
 use rsevents::{Awaitable, EventState, ManualResetEvent};
 use std::io::prelude::*;
@@ -22,7 +18,6 @@ const APPROX_RESP_HEADER_LEN: usize = 3;
 mod socket_listener {
     use super::*;
     include!(concat!(env!("OUT_DIR"), "/protobuf/mod.rs"));
-    use ntest::{assert_false, assert_true};
     use pb_message::{Response, Request};
     use protobuf::Message;
     use rand::distributions::Alphanumeric;
@@ -38,7 +33,7 @@ mod socket_listener {
     fn assert_value(pointer: u64, expected_value: Option<&[u8]>) {
         let pointer = pointer as *mut Value;
         let received_value = unsafe { Box::from_raw(pointer) };
-        assert_false!(expected_value.is_none());
+        assert_eq!(expected_value.is_none(), false);
         let expected_value = expected_value.unwrap();
         assert_eq!(*received_value, Value::Data(expected_value.to_owned()));
     }
@@ -78,7 +73,7 @@ mod socket_listener {
                 assert_eq!(response_type, ResponseType::RequestError);
             },
             None => {
-                assert_true!(expected_value.is_none());
+                assert_eq!(expected_value.is_none(), true);
             },
         };
         response

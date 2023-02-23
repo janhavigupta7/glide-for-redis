@@ -1,5 +1,4 @@
 use super::{headers::*, rotating_buffer::RotatingBuffer};
-use bytes::BufMut;
 use dispose::{Disposable, Dispose};
 use futures::stream::StreamExt;
 use logger_core::{log, Level};
@@ -162,7 +161,7 @@ async fn send_set_request(
 }
 
 async fn write_response(
-    resp_result: Result<Value, RedisError>,
+    resp_result: Result<Value, &String>,
     callback_index: u32,
     writer: &Rc<Writer>,
     response_type: ResponseType,
@@ -216,8 +215,11 @@ async fn send_get_request(
     writer: Rc<Writer>,
 ) -> RedisResult<()> {
     assert_eq!(request.args.len(), 1);  // TODO: delete it in the chunks implementation
-    let result = connection.get(&request.args.first().unwrap()).await;
-    write_response(result, request.callback_idx, &writer, ResponseType::Value).await?;
+    let result: Result<Value, RedisError> = connection.get(&request.args.first().unwrap()).await;
+    match result {
+        Ok(res) => write_response(Ok(res), request.callback_idx, &writer, ResponseType::Value).await?,
+        Err(err) => write_response(Err(&err.to_string()), request.callback_idx, &writer, ResponseType::Value).await?,
+    }
     Ok(())
 }
 
@@ -248,7 +250,7 @@ fn handle_request(
         };
         if let Err(err) = result {
             let _ = write_response(
-                Err(err),
+                Err(&err.to_string()),
                 request.callback_idx,
                 &writer,
                 ResponseType::ClosingError,
@@ -377,18 +379,12 @@ async fn listen_on_client_stream(socket: UnixStream) {
         Ok(conn) => conn,
         Err(ClientCreationError::SocketListenerClosed(reason)) => {
             let error_message = format!("Socket listener closed due to {reason:?}");
-            write_error(&error_message, u32::MAX, writer, ResponseType::ClosingError).await;
+            let _ = write_response(Err(&error_message), u32::MAX, &writer, ResponseType::ClosingError).await;
             logger_core::log(logger_core::Level::Error, "client creation", error_message);
             return; // TODO: implement error protocol, handle closing reasons different from ReadSocketClosed
         }
         Err(ClientCreationError::UnhandledError(err)) => {
-            write_error(
-                &err.to_string(),
-                u32::MAX,
-                writer,
-                ResponseType::ClosingError,
-            )
-            .await;
+            let _ = write_response(Err(&err.to_string()), u32::MAX, &writer, ResponseType::ClosingError).await;
             logger_core::log(
                 logger_core::Level::Error,
                 "client creation",
@@ -400,7 +396,7 @@ async fn listen_on_client_stream(socket: UnixStream) {
     tokio::select! {
             reader_closing = read_values_loop(client_listener, connection, writer.clone()) => {
                 if let ClosingReason::UnhandledError(err) = reader_closing {
-                    let _ = write_response(Err(err), u32::MAX, &writer, ResponseType::ClosingError).await;
+                    let _ = write_response(Err(&err.to_string()), u32::MAX, &writer, ResponseType::ClosingError).await;
                 };
             },
             writer_closing = receiver.recv() => {

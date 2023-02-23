@@ -553,7 +553,7 @@ async fn handle_signals() {
 /// * `init_callback` - called when the socket listener fails to initialize, with the reason for the failure.
 pub fn start_legacy_socket_listener<InitCallback>(init_callback: InitCallback)
 where
-    InitCallback: FnOnce(Result<String, String>) + Send + 'static,
+    InitCallback: FnOnce(Result<String, RedisError>) + Send + 'static,
 {
     thread::Builder::new()
         .name("socket_listener_thread".to_string())

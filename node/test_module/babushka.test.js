@@ -143,14 +143,15 @@ describe("socket client", () => {
         const writer = new BufferWriter();
         var request = {
             callbackIdx: 1,
-            requestType: 1,
-            args: [""]
+            requestType: 2,
+            args: ["bar1", "bar2"]
         };
         var request2 = {
             callbackIdx: 3,
             requestType: 4,
             args: ["bar3", "bar4"]
         };
+        pb_message.Request.encodeDelimited(request, writer);
         pb_message.Request.encodeDelimited(request2, writer);
         const buffer = writer.finish();
         const reader = new BufferReader(buffer);
