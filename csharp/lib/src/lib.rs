@@ -1,4 +1,4 @@
-use babushka::socket_listener_legacy::start_socket_listener;
+use babushka::start_legacy_socket_listener;
 use redis::aio::MultiplexedConnection;
 use redis::{AsyncCommands, RedisResult};
 use std::{
@@ -125,7 +125,7 @@ pub extern "C" fn get(connection_ptr: *const c_void, callback_index: usize, key:
 pub extern "C" fn start_socket_listener_wrapper(
     init_callback: unsafe extern "C" fn(*const c_char, *const c_char) -> (),
 ) {
-    start_socket_listener(move |result| {
+    start_legacy_socket_listener(move |result| {
         match result {
             Ok(socket_name) => {
                 let c_str = CString::new(socket_name).unwrap();
@@ -134,7 +134,7 @@ pub extern "C" fn start_socket_listener_wrapper(
                 }
             }
             Err(error_message) => {
-                let c_str = CString::new(error_message).unwrap();
+                let c_str = CString::new(error_message.to_string()).unwrap();
                 unsafe {
                     init_callback(std::ptr::null(), c_str.as_ptr());
                 }

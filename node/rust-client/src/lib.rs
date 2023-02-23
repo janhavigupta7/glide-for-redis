@@ -1,4 +1,4 @@
-use babushka::headers::HEADER_END;
+use babushka::headers_legacy::HEADER_END;
 use babushka::start_socket_listener;
 use napi::bindgen_prelude::{BigInt, ToNapiValue};
 use napi::{Env, Error, JsObject, JsUnknown, Result, Status};
