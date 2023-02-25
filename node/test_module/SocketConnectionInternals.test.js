@@ -1,192 +1,195 @@
-// import { SocketConnection, BabushkaInternal, setLoggerConfig } from "..";
-// import net from "net";
-// import fs from "fs";
-// import os from "os";
-// import path from "path";
+import { SocketConnection, BabushkaInternal, setLoggerConfig } from "..";
+import net from "net";
+import fs from "fs";
+import os from "os";
+import path from "path";
+import { pb_message } from "../src/ProtobufMessage";
+import { Reader } from "protobufjs";
+import { valueFromPointer } from "babushka-rs-internal";
 
-// const {
-//     HEADER_LENGTH_IN_BYTES,
-//     ResponseType,
-//     RequestType,
-//     createLeakedString,
-//     createLeakedValue,
-// } = BabushkaInternal;
+const {
+    ResponseType,
+    RequestType,
+    createLeakedValue,
+} = BabushkaInternal;
 
-// beforeAll(() => {
-//     setLoggerConfig("info");
-// });
+beforeAll(() => {
+    setLoggerConfig("info");
+});
 
-// function sendResponse(
-//     socket,
-//     responseType,
-//     callbackIndex,
-//     message = undefined
-// ) {
-//     const pointerLength = 8;
-//     const length = HEADER_LENGTH_IN_BYTES + (message ? pointerLength : 0);
-//     const buffer = new ArrayBuffer(length);
-//     const response = new Uint32Array(buffer);
-//     response[0] = length;
-//     response[1] = callbackIndex;
-//     response[2] = responseType;
+function sendResponse(
+    socket,
+    responseType,
+    callbackIndex,
+    message = undefined
+) {
+    var response = pb_message.Response.create();
+    response.callbackIdx = callbackIndex;
+    if (responseType == ResponseType.Value) {
+        const pointer = createLeakedValue(message);
+        const pointer_number = Number(pointer.toString())
+        response.respPointer = pointer_number;
+    } else if (responseType == ResponseType.ClosingError) {
+        response.closingError = message;
+    } else if (responseType == ResponseType.RequestError) {
+        response.requestError = message;
+    } else if (responseType == ResponseType.Null) {
+        // do nothing
+    } else {
+        throw new Error("Got unknown response type: ", responseType);
+    }
+    let response_bytes = pb_message.Response.encodeDelimited(response).finish();
+    socket.write(response_bytes);
+}
 
-//     if (message !== undefined) {
-//         const view = new DataView(
-//             buffer,
-//             HEADER_LENGTH_IN_BYTES,
-//             pointerLength
-//         );
-//         const pointer =
-//             responseType === ResponseType.Value
-//                 ? createLeakedValue(message)
-//                 : createLeakedString(message);
-//         view.setBigUint64(0, pointer, true);
-//     }
-//     socket.write(new Uint8Array(buffer));
-// }
+function getConnectionAndSocket() {
+    return new Promise((resolve) => {
+        const temporaryFolder = fs.mkdtempSync(
+            path.join(os.tmpdir(), `socket_listener`)
+        );
+        const socketName = path.join(temporaryFolder, "read");
+        let connectionPromise = undefined;
+        const server = net
+            .createServer(async (socket) => {
+                socket.once("data", (data) => {
+                    const reader = Reader.create(data);
+                    const request = pb_message.Request.decodeDelimited(reader);
+                    expect(request.requestType).toEqual(RequestType.ServerAddress);
 
-// function getConnectionAndSocket() {
-//     return new Promise((resolve) => {
-//         const temporaryFolder = fs.mkdtempSync(
-//             path.join(os.tmpdir(), `socket_listener`)
-//         );
-//         const socketName = path.join(temporaryFolder, "read");
-//         let connectionPromise = undefined;
-//         const server = net
-//             .createServer(async (socket) => {
-//                 socket.once("data", (data) => {
-//                     const uint32Array = new Uint32Array(data.buffer, 0, 3);
+                    sendResponse(socket, ResponseType.Null, request.callbackIdx);
+                });
 
-//                     expect(data.byteLength).toEqual(HEADER_LENGTH_IN_BYTES);
-//                     expect(uint32Array[0]).toEqual(HEADER_LENGTH_IN_BYTES); // length of message when empty string is the address
-//                     expect(uint32Array[2]).toEqual(RequestType.ServerAddress);
+                const connection = await connectionPromise;
+                resolve({
+                    connection,
+                    socket,
+                    server,
+                });
+            })
+            .listen(socketName);
+        connectionPromise = new Promise((resolve) => {
+            const socket = new net.Socket();
+            socket.connect(socketName).once("connect", async () => {
+                const connection = await SocketConnection.__CreateConnection(
+                    "",
+                    socket
+                );
+                resolve(connection);
+            });
+        });
+    });
+}
 
-//                     sendResponse(socket, ResponseType.Null, uint32Array[1]);
-//                 });
+function closeTestResources(connection, server, socket) {
+    connection.dispose();
+    server.close();
+    socket.end();
+}
 
-//                 const connection = await connectionPromise;
-//                 resolve({
-//                     connection,
-//                     socket,
-//                     server,
-//                 });
-//             })
-//             .listen(socketName);
-//         connectionPromise = new Promise((resolve) => {
-//             const socket = new net.Socket();
-//             socket.connect(socketName).once("connect", async () => {
-//                 const connection = await SocketConnection.__CreateConnection(
-//                     "",
-//                     socket
-//                 );
-//                 resolve(connection);
-//             });
-//         });
-//     });
-// }
+async function testWithResources(testFunction) {
+    const { connection, server, socket } = await getConnectionAndSocket();
 
-// function closeTestResources(connection, server, socket) {
-//     connection.dispose();
-//     server.close();
-//     socket.end();
-// }
+    await testFunction(connection, socket);
 
-// async function testWithResources(testFunction) {
-//     const { connection, server, socket } = await getConnectionAndSocket();
+    closeTestResources(connection, server, socket);
+}
 
-//     await testFunction(connection, socket);
+describe("SocketConnectionInternals", () => {
+    it("Test setup returns values", async () => {
+        await testWithResources((connection, socket) => {
+            expect(connection).toEqual(expect.anything());
+            expect(socket).toEqual(expect.anything());
+        });
+    });
 
-//     closeTestResources(connection, server, socket);
-// }
+    it("should close socket on dispose", async () => {
+        await testWithResources(async (connection, socket) => {
+            const endReceived = new Promise((resolve) => {
+                socket.once("end", resolve(true));
+            });
+            connection.dispose();
 
-// describe("SocketConnectionInternals", () => {
-//     it("Test setup returns values", async () => {
-//         await testWithResources((connection, socket) => {
-//             expect(connection).toEqual(expect.anything());
-//             expect(socket).toEqual(expect.anything());
-//         });
-//     });
+            expect(await endReceived).toBeTruthy();
+        });
+    });
 
-//     it("should close socket on dispose", async () => {
-//         await testWithResources(async (connection, socket) => {
-//             const endReceived = new Promise((resolve) => {
-//                 socket.once("end", resolve(true));
-//             });
-//             connection.dispose();
+    it("should pass values received from socket", async () => {
+        await testWithResources(async (connection, socket) => {
+            const expected = "bar";
+            socket.once("data", (data) => {
+                const reader = Reader.create(data);
+                const request = pb_message.Request.decodeDelimited(reader);
+                expect(request.requestType).toEqual(RequestType.GetString);
+                expect(request.args.length).toEqual(1);
 
-//             expect(await endReceived).toBeTruthy();
-//         });
-//     });
+                sendResponse(
+                    socket,
+                    ResponseType.Value,
+                    request.callbackIdx,
+                    expected
+                );
+            });
+            const result = await connection.get("foo");
+            expect(result).toEqual(expected);
+        });
+    });
 
-//     it("should pass values received from socket", async () => {
-//         await testWithResources(async (connection, socket) => {
-//             const expected = "bar";
-//             socket.once("data", (data) => {
-//                 const uint32Array = new Uint32Array(data.buffer, 0, 3);
-//                 expect(uint32Array[0]).toEqual(15);
-//                 expect(uint32Array[2]).toEqual(RequestType.GetString);
+    it("should pass null returned from socket", async () => {
+        await testWithResources(async (connection, socket) => {
+            socket.once("data", (data) => {
+                const reader = Reader.create(data);
+                const request = pb_message.Request.decodeDelimited(reader);
+                expect(request.requestType).toEqual(RequestType.GetString);
+                expect(request.args.length).toEqual(1);
 
-//                 sendResponse(
-//                     socket,
-//                     ResponseType.Value,
-//                     uint32Array[1],
-//                     expected
-//                 );
-//             });
-//             const result = await connection.get("foo");
-//             expect(result).toEqual(expected);
-//         });
-//     });
+                sendResponse(socket, ResponseType.Null, request.callbackIdx);
+            });
+            const result = await connection.get("foo");
+            expect(result).toBeNull();
+        });
+    });
 
-//     it("should pass null returned from socket", async () => {
-//         await testWithResources(async (connection, socket) => {
-//             socket.once("data", (data) => {
-//                 const uint32Array = new Uint32Array(data.buffer, 0, 3);
-//                 expect(uint32Array[0]).toEqual(15);
-//                 expect(uint32Array[2]).toEqual(RequestType.GetString);
+    it("should reject requests that received a response error", async () => {
+        await testWithResources(async (connection, socket) => {
+            const error = "check";
+            socket.once("data", (data) => {
+                const reader = Reader.create(data);
+                const request = pb_message.Request.decodeDelimited(reader);
+                expect(request.requestType).toEqual(RequestType.GetString);
+                expect(request.args.length).toEqual(1);
+                sendResponse(
+                    socket,
+                    ResponseType.RequestError,
+                    request.callbackIdx,
+                    error
+                );
+            });
+            const request = connection.get("foo");
 
-//                 sendResponse(socket, ResponseType.Null, uint32Array[1]);
-//             });
-//             const result = await connection.get("foo");
-//             expect(result).toBeNull();
-//         });
-//     });
+            await expect(request).rejects.toMatch(error);
+        });
+    });
 
-//     it("should reject requests that received a response error", async () => {
-//         await testWithResources(async (connection, socket) => {
-//             const error = "check";
-//             socket.once("data", (data) => {
-//                 const uint32Array = new Uint32Array(data.buffer, 0, 3);
-//                 sendResponse(
-//                     socket,
-//                     ResponseType.RequestError,
-//                     uint32Array[1],
-//                     error
-//                 );
-//             });
-//             const request = connection.get("foo");
+    it("should all requests when receiving a closing error", async () => {
+        await testWithResources(async (connection, socket) => {
+            const error = "check";
+            socket.once("data", (data) => {
+                const reader = Reader.create(data);
+                const request = pb_message.Request.decodeDelimited(reader);
+                expect(request.requestType).toEqual(RequestType.GetString);
+                expect(request.args.length).toEqual(1);
+                sendResponse(
+                    socket,
+                    ResponseType.ClosingError,
+                    request.callbackIdx,
+                    error
+                );
+            });
+            const request1 = connection.get("foo");
+            const request2 = connection.get("bar");
 
-//             await expect(request).rejects.toMatch(error);
-//         });
-//     });
-
-//     it("should all requests when receiving a closing error", async () => {
-//         await testWithResources(async (connection, socket) => {
-//             const error = "check";
-//             socket.once("data", (data) => {
-//                 const uint32Array = new Uint32Array(data.buffer, 0, 3);
-//                 sendResponse(
-//                     socket,
-//                     ResponseType.ClosingError,
-//                     uint32Array[1],
-//                     error
-//                 );
-//             });
-//             const request1 = connection.get("foo");
-//             const request2 = connection.get("bar");
-
-//             await expect(request1).rejects.toMatch(error);
-//             await expect(request2).rejects.toMatch(error);
-//         });
-//     });
-// });
+            await expect(request1).rejects.toMatch(error);
+            await expect(request2).rejects.toMatch(error);
+        });
+    });
+});

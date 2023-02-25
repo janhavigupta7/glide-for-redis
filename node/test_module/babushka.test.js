@@ -3,7 +3,7 @@ import RedisServer from "redis-server";
 import FreePort from "find-free-port";
 import { v4 as uuidv4 } from "uuid";
 import { pb_message } from "../src/ProtobufMessage";
-import protobuf, { BufferWriter, BufferReader } from "protobufjs";
+import { BufferWriter, BufferReader } from "protobufjs";
 
 function OpenServerAndExecute(port, action) {
     return new Promise((resolve, reject) => {

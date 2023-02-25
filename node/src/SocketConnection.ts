@@ -39,8 +39,7 @@ export class SocketConnection {
             if (message.requestError !== null) {
                 reject(message.requestError);
             } else if (message.closingError !== null) {
-                reject(message.closingError);
-                this.dispose();
+                this.dispose(message.closingError);
             } else if (message.respPointer) {
                 const pointer = message.respPointer;
                 resolve(valueFromPointer(BigInt(pointer.toString())));
