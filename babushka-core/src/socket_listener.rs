@@ -5,7 +5,6 @@ use crate::pb_message::{Request, RequestType, Response};
 use dispose::{Disposable, Dispose};
 use futures::stream::StreamExt;
 use logger_core::{log_error, log_info, log_trace};
-use protobuf::Message;
 use redis::aio::MultiplexedConnection;
 use redis::{cmd, AsyncCommands, ErrorKind, RedisResult, Value};
 use redis::{Client, RedisError};
@@ -27,6 +26,7 @@ use tokio_retry::Retry;
 use tokio_util::task::LocalPoolHandle;
 use ClosingReason::*;
 use PipeListeningResult::*;
+use prost::Message;
 
 /// The socket file name
 const SOCKET_FILE_NAME: &str = "babushka-socket";
@@ -169,7 +169,7 @@ async fn write_closing_error(
     callback_index: u32,
     writer: &Rc<Writer>,
 ) -> Result<(), io::Error> {
-    let mut response = Response::new();
+    let mut response = Response::default();
     response.callback_idx = callback_index;
     response.value = Some(pb_message::response::Value::ClosingError(err.to_string()));
     write_to_writer(response, writer).await
@@ -181,12 +181,12 @@ async fn write_result(
     callback_index: u32,
     writer: &Rc<Writer>,
 ) -> Result<(), io::Error> {
-    let mut response = Response::new();
+    let mut response = Response::default();
     response.callback_idx = callback_index;
     match resp_result {
         Ok(Value::Okay) => {
             response.value = Some(pb_message::response::Value::ConstantResponse(
-                pb_message::ConstantResponse::OK.into(),
+                pb_message::ConstantResponse::Ok.into(),
             ))
         }
         Ok(value) => {
@@ -208,7 +208,7 @@ async fn write_result(
 
 async fn write_to_writer(response: Response, writer: &Rc<Writer>) -> Result<(), io::Error> {
     let mut vec = writer.accumulated_outputs.take();
-    let encode_result = response.write_length_delimited_to_vec(&mut vec);
+    let encode_result = response.encode_length_delimited(&mut vec);
 
     // Write the response' length to the buffer
     match encode_result {
@@ -242,13 +242,10 @@ async fn send_get_request(
 
 fn handle_request(request: Request, connection: impl BabushkaClient + 'static, writer: Rc<Writer>) {
     task::spawn_local(async move {
-        let request_type = request
-            .request_type
-            .enum_value_or(RequestType::InvalidRequest);
-        let result = match request_type {
-            RequestType::GetString => send_get_request(&request, connection, writer.clone()).await,
-            RequestType::SetString => send_set_request(&request, connection, writer.clone()).await,
-            RequestType::ServerAddress => Err(RedisError::from((
+        let result = match RequestType::from_i32(request.request_type) {
+            Some(RequestType::GetString) => send_get_request(&request, connection, writer.clone()).await,
+            Some(RequestType::SetString) => send_set_request(&request, connection, writer.clone()).await,
+            Some(RequestType::ServerAddress) => Err(RedisError::from((
                 ErrorKind::ClientError,
                 "Server address can only be sent once",
             ))),
@@ -345,8 +342,8 @@ async fn wait_for_server_address_create_conn(
         Closed(reason) => Err(ClientCreationError::SocketListenerClosed(reason)),
         ReceivedValues(received_requests) => {
             if let Some(request) = received_requests.first() {
-                match request.request_type.unwrap() {
-                    RequestType::ServerAddress => parse_address_create_conn(writer, request).await,
+                match RequestType::from_i32(request.request_type) {
+                    Some(RequestType::ServerAddress) => parse_address_create_conn(writer, request).await,
                     _ => Err(ClientCreationError::UnhandledError(
                         "Received another request before receiving server address".to_string(),
                     )),

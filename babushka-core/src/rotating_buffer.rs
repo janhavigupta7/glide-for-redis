@@ -2,9 +2,9 @@ use crate::pb_message::Request;
 use integer_encoding::VarInt;
 use lifeguard::{pool, Pool, RcRecycled, StartingSize, Supplier};
 use logger_core::log_error;
-use protobuf::Message;
 use std::{io, mem, rc::Rc};
-
+use std::io::Cursor;
+use prost::Message;
 type Buffer = RcRecycled<Vec<u8>>;
 /// Buffer needs to be wrapped in Rc, because RcRecycled's clone implementation
 /// involves copying the array.
@@ -78,8 +78,8 @@ impl RotatingBuffer {
                 if (start_pos + request_len as usize) > buffer_len {
                     break;
                 } else {
-                    match Request::parse_from_bytes(
-                        &buffer[start_pos..start_pos + request_len as usize],
+                    match Request::decode(
+                        &mut Cursor::new(&buffer[start_pos..start_pos + request_len as usize])
                     ) {
                         Ok(request) => {
                             prev_position += request_len as usize + bytes_read;
@@ -114,7 +114,8 @@ mod tests {
     use super::*;
     use crate::pb_message::RequestType;
     use rand::{distributions::Alphanumeric, Rng};
-    use std::io::Write;
+    use crate::pb_message::Request;
+    use prost::Message;
 
     fn write_length(buffer: &mut Vec<u8>, length: u32) {
         let required_space = u32::required_space(length);
@@ -128,7 +129,7 @@ mod tests {
         args: Vec<String>,
         request_type: RequestType,
     ) -> Request {
-        let mut request = Request::new();
+        let mut request = Request::default();
         request.callback_idx = callback_index;
         request.request_type = request_type.into();
         request.args = args;
@@ -142,9 +143,10 @@ mod tests {
         request_type: RequestType,
     ) {
         let request = create_request(callback_index, args, request_type);
-        let message_length = request.compute_size() as usize;
+        let message_length = request.encoded_len() as usize;
         write_length(buffer, message_length as u32);
-        let _res = buffer.write_all(&request.write_to_bytes().unwrap());
+        request.encode(&mut buffer);
+        // let _res = buffer.write_all(&request.encode().unwrap());
     }
 
     fn write_get(buffer: &mut Vec<u8>, callback_index: u32, key: &str) {

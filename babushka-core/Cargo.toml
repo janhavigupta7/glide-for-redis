@@ -25,6 +25,7 @@ tokio-retry = "0.3.0"
 protobuf = "3"
 integer-encoding = "3.0.4"
 thiserror = "1"
+prost = "^0.11"
 
 [dev-dependencies]
 rand = "0.8.5"
@@ -36,3 +37,4 @@ rstest = "0.16.0"
 [build-dependencies]
 protobuf-codegen = "3"
 protoc-rust = "^2.0"
+prost-build = "^0.11"

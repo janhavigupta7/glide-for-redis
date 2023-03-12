@@ -15,11 +15,11 @@ const APPROX_RESP_HEADER_LEN: usize = 3;
 mod socket_listener {
     use super::*;
     use pb_message::{response, ConstantResponse, Request, RequestType, Response};
-    use protobuf::{EnumOrUnknown, Message};
+    use prost::Message;
     use rand::distributions::Alphanumeric;
     use redis::Value;
     use rstest::rstest;
-    use std::{mem::size_of, time::Duration};
+    use std::{mem::size_of, time::Duration, io::Cursor};
     use tokio::{net::UnixListener, runtime::Builder};
 
     /// An enum representing the values of the request type field for testing purposes
@@ -49,7 +49,7 @@ mod socket_listener {
 
     fn decode_response(buffer: &[u8], cursor: usize, message_length: usize) -> Response {
         let header_end = cursor;
-        match Response::parse_from_bytes(&buffer[header_end..header_end + message_length]) {
+        match Response::decode(&mut Cursor::new(&buffer[header_end..header_end + message_length])) {
             Ok(res) => res,
             Err(err) => {
                 panic!(
@@ -103,8 +103,7 @@ mod socket_listener {
                 assert_eq!(response_type, ResponseType::RequestError);
             }
             Some(response::Value::ConstantResponse(enum_value)) => {
-                let enum_value = enum_value.unwrap();
-                if enum_value == ConstantResponse::OK {
+                if ConstantResponse::from_i32(enum_value) == Some(ConstantResponse::Ok) {
                     assert_eq!(expected_value.unwrap(), Value::Okay);
                 } else {
                     unreachable!()
@@ -129,16 +128,16 @@ mod socket_listener {
         buffer: &mut Vec<u8>,
         callback_index: u32,
         args: Vec<String>,
-        request_type: EnumOrUnknown<RequestType>,
+        request_type: i32,
     ) -> u32 {
-        let mut request = Request::new();
+        let mut request = Request::default();
         request.callback_idx = callback_index;
         request.request_type = request_type;
         request.args = args;
-        let message_length = request.compute_size() as u32;
+        let message_length = request.encoded_len() as u32;
 
         write_header(buffer, message_length);
-        let _res = buffer.write_all(&request.write_to_bytes().unwrap());
+        let _res = request.encode(buffer);
         message_length
     }
 
@@ -366,15 +365,15 @@ mod socket_listener {
             &mut buffer,
             CALLBACK_INDEX,
             vec![key.to_string()],
-            EnumOrUnknown::from_i32(request_type),
+            request_type,
         );
         test_basics.socket.write_all(&buffer).unwrap();
         let mut buffer = [0; 50];
         let _size = test_basics.socket.read(&mut buffer).unwrap();
         let response = assert_error_response(&buffer, CALLBACK_INDEX, ResponseType::ClosingError);
         assert_eq!(
-            response.closing_error(),
-            format!("Received invalid request type: {request_type}")
+            response.value,
+            Some(pb_message::response::Value::ClosingError(format!("Received invalid request type: {request_type}")))
         );
     }
 
@@ -467,7 +466,7 @@ mod socket_listener {
                             let mut results = results_for_read.lock().unwrap();
                             match response.value {
                                 Some(response::Value::ConstantResponse(constant)) => {
-                                    assert_eq!(constant, ConstantResponse::OK.into());
+                                    assert_eq!(constant, ConstantResponse::Ok.into());
                                     assert_eq!(results[callback_index], State::Initial);
                                     results[callback_index] = State::ReceivedNull;
                                 }
