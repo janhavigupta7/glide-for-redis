@@ -279,14 +279,25 @@ public static class MainClass
     {
         if (clientsToRun == "all" || clientsToRun == "ffi" || clientsToRun == "babushka")
         {
-            var clients = await createClients(clientCount, () =>
+
+        var clients = await createClients(clientCount, () =>
+            {
+                var babushka_client = new AsyncClient(getAddressWithRedisPrefix(host, useTLS));
+                return Task.FromResult<(Func<string, Task<string?>>, Func<string, string, Task>, Action)>(
+                    (async (key) => $"{await babushka_client.GetAsync(key)}",
+                     async (key, value) => await babushka_client.SetAsync(key, value),
+                     () => babushka_client.Dispose()));
+            });
+
+
+/*            var clients = await createClients(clientCount, () =>
             {
                 var babushka_client = new AsyncClient(getAddressWithRedisPrefix(host, useTLS));
                 return Task.FromResult<(Func<string, Task<string?>>, Func<string, string, Task>, Action)>(
                     (async (key) => await babushka_client.GetAsync(key),
                      async (key, value) => await babushka_client.SetAsync(key, value),
                      () => babushka_client.Dispose()));
-            });
+            });*/
 
             await run_clients(
                 clients,
@@ -302,10 +313,24 @@ public static class MainClass
         {
             var clients = await createClients(clientCount, async () =>
                 {
-                    var babushka_client = await AsyncSocketClient.CreateSocketClient(getAddressWithRedisPrefix(host, useTLS));
-                    return (async (key) => await babushka_client.GetAsync(key),
+
+                    var babushka_client = await AsyncSocketClientBlockPipeTry.CreateSocketClient(host, 6379, useTLS);
+                    return (async (key) => $"{await babushka_client.GetAsync(key)}",
                             async (key, value) => await babushka_client.SetAsync(key, value),
+                            () => babushka_client!.Dispose());
+
+                    /*var babushka_client = new AsyncClient(getAddressWithRedisPrefix(host, useTLS));
+                    return Task.FromResult<(Func<string, Task<string?>>, Func<string, string, Task>, Action)>(
+                        (async (key) => $"{await babushka_client.GetAsync(key)}",
+                        async (key, value) => await babushka_client.SetAsync(key, value),
+                        () => babushka_client.Dispose()));*/
+
+                    /*
+                    var babushka_client = await AsyncSocketClientBlockPipeTry.CreateSocketClient(host, 6379, useTLS);
+                    return (async (key) => await babushka_client!.GetAsync(key),
+                            async (key, value) => await babushka_client!.SetAsync(key, value),
                             () => babushka_client.Dispose());
+                            */
                 });
             await run_clients(
                 clients,

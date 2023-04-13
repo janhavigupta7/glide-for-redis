@@ -1,3 +1,4 @@
+use napi::bindgen_prelude::FromNapiValue;
 use babushka::start_socket_listener;
 use babushka::MAX_REQUEST_ARGS_LENGTH;
 use byteorder::{LittleEndian, WriteBytesExt};
