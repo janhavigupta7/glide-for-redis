@@ -30,6 +30,8 @@ use tokio_retry::Retry;
 use tokio_util::task::LocalPoolHandle;
 use ClosingReason::*;
 use PipeListeningResult::*;
+use rand::Rng;
+
 
 /// The socket file name
 const SOCKET_FILE_NAME: &str = "babushka-socket";
@@ -622,12 +624,18 @@ pub fn get_socket_path_from_name(socket_name: String) -> String {
 
 /// Get the socket path as a string
 pub fn get_socket_path() -> String {
-    let socket_name = format!("{}-{}", SOCKET_FILE_NAME, std::process::id());
+    let mut rng = rand::thread_rng();
+
+    let mut n: u32 = rng.gen::<u32>();
+    n = n + std::process::id();
+    let socket_name = format!("{}-{}", SOCKET_FILE_NAME, n);
     get_socket_path_from_name(socket_name)
 }
 
 async fn handle_signals() {
     // Handle Unix signals
+    
+
     let mut signals =
         Signals::new([SIGTERM, SIGQUIT, SIGINT, SIGHUP]).expect("Failed creating signals");
     loop {

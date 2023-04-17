@@ -175,6 +175,10 @@ do
         -only-ffi)
             chosenClients="ffi"
             ;;
+        -only-native)
+            chosenClients="native"
+            ;;
+
         -only-babushka)
             chosenClients="babushka"
             ;;                  

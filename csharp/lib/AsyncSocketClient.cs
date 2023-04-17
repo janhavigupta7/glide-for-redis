@@ -61,9 +61,11 @@ namespace babushka
 
         private AsyncSocketClient(Socket socket)
         {
-            this.socket = socket;
-            this.writeStream = new NetworkStream(socket, FileAccess.Write, false);
-            StartListeningOnReadSocket();
+            //this.socket = socket;
+            this.writeStream = new NetworkStream(socket, FileAccess.Write, false);            
+            //StartListeningOnReadSocket();
+            Console.WriteLine("Error AsyncSocketClient");
+            return;
         }
 
         ~AsyncSocketClient()
@@ -73,7 +75,9 @@ namespace babushka
 
         private void StartListeningOnReadSocket()
         {
-            Task.Run(() =>
+            Console.WriteLine("Error AsyncSocketClient");
+            return;
+      /*      Task.Run(() =>
             {
                 using (var stream = new NetworkStream(socket!, FileAccess.Read, false))
                 {
@@ -103,7 +107,7 @@ namespace babushka
                         }
                     }
                 }
-            });
+            });*/
         }
 
 
@@ -119,7 +123,9 @@ namespace babushka
 
         protected override void WriteToSocket(IMessage writeRequest)
         {
-            WriteToSocket(socket!, writeStream, new[] { writeRequest });
+            Console.WriteLine("Error WriteToSocket");
+            return;
+           // WriteToSocket(socket!, writeStream, new[] { writeRequest });
         }
 
         private static void WriteToSocket(Socket socket, NetworkStream stream, IEnumerable<IMessage> WriteRequests)

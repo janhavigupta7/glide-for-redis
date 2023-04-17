@@ -124,13 +124,15 @@ public static class MainClass
         string data,
         Dictionary<ChosenAction, ConcurrentBag<double>> action_latencies)
     {
-        var stopwatch = new Stopwatch();
+        int ii = 0;
         do
         {
+            ++ii;
             Interlocked.Increment(ref started_tasks_counter);
             var index = (int)(started_tasks_counter % clients.Length);
             var client = clients[index];
             var action = choose_action();
+            var stopwatch = new Stopwatch();
             stopwatch.Start();
             switch (action)
             {
@@ -146,7 +148,13 @@ public static class MainClass
             }
             stopwatch.Stop();
             var latency_list = action_latencies[action];
-            latency_list.Add(((double)stopwatch.ElapsedMilliseconds) / 1000);
+            latency_list.Add(((double)stopwatch.ElapsedMilliseconds));
+            if (ii % 100000 == 0)
+            {
+                
+                Console.WriteLine($"Latency = {((double)stopwatch.ElapsedMilliseconds)}");
+
+            }
         } while (started_tasks_counter < total_commands);
     }
 
@@ -313,8 +321,9 @@ public static class MainClass
         {
             var clients = await createClients(clientCount, async () =>
                 {
-
+                    Console.WriteLine("New client");
                     var babushka_client = await AsyncSocketClientBlockPipeTry.CreateSocketClient(host, 6379, useTLS);
+                    Console.WriteLine($"New client post creation babushka_client = {babushka_client}");
                     return (async (key) => $"{await babushka_client.GetAsync(key)}",
                             async (key, value) => await babushka_client.SetAsync(key, value),
                             () => babushka_client!.Dispose());
@@ -335,7 +344,7 @@ public static class MainClass
             await run_clients(
                 clients,
                 "babushka socket",
-                total_commands,
+                total_commands*1000,
                 data_size,
                 num_of_concurrent_tasks
             );
@@ -346,7 +355,7 @@ public static class MainClass
             }
         }
 
-        if (clientsToRun == "all")
+        if (clientsToRun == "all" || clientsToRun == "native") 
         {
             var clients = await createClients(clientCount, () =>
                 {
@@ -360,7 +369,7 @@ public static class MainClass
             await run_clients(
                 clients,
                 "StackExchange.Redis",
-                total_commands,
+                total_commands*1000,
                 data_size,
                 num_of_concurrent_tasks
             );

@@ -5,6 +5,7 @@ using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Google.Protobuf;
+using System.Diagnostics;
 
 namespace babushka
 {
@@ -27,16 +28,30 @@ namespace babushka
             var request = new RedisRequest.RedisRequest { CallbackIdx = message.Index, RequestType = RedisRequest.RequestType.SetString, ArgsArray = new() };
             request.ArgsArray.Args.Add(key);
             request.ArgsArray.Args.Add(value);
-            WriteToSocket(request);
+            WriteToSocket(request);            
             await task;
         }
 
         public async ValueTask<RedisValueBase?> GetAsync(string key)
-        {
+        {            
+            var stopwatch = new Stopwatch();
+            stopwatch.Start();
             var (message, task) = messageContainer.GetMessageForCall(null, null);
             var request = new RedisRequest.RedisRequest { CallbackIdx = message.Index, RequestType = RedisRequest.RequestType.GetString, ArgsArray = new() };
             request.ArgsArray.Args.Add(key);
             WriteToSocket(request);
+            stopwatch.Stop();            
+            elaspsedTimeGetMessage += (double)(stopwatch.ElapsedMilliseconds);
+            countGetMessage++;
+            if (countGetMessage % 500000 == 0)
+            {
+                message.stopWatch.Stop();
+                double messageTime = (double)(message.stopWatch.ElapsedMilliseconds);
+            
+                Console.WriteLine($"GetAsync after write to socket message time = {messageTime/1.0}");   
+                Console.WriteLine($"GetMessageAverageTime = {elaspsedTimeGetMessage/500000}");
+                elaspsedTimeGetMessage = 0;   
+            }
             return await task;
         }
 
@@ -106,7 +121,8 @@ namespace babushka
             {
                 return;
             }
-            this.socket!.Close();
+            this.socket1!.Close();
+            this.socket2!.Close();
             messageContainer.DisposeWithError(error);
         }
 
@@ -180,7 +196,12 @@ namespace babushka
 
         #region Protected Memebers
 
-        protected Socket? socket;
+        protected Socket? socket1;
+        protected Socket? socket2;
+
+
+        Double elaspsedTimeGetMessage = 0;
+        int countGetMessage = 0;
         
         internal readonly MessageContainer messageContainer = new();
         /// 1 when disposed, 0 beforeException thrown: 'System.TypeLoadException' in babushka.dll: 'Could not load type 'babushka.RedisValue' from assembly 'babushka, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null' because it contains an object field at offset 8 that is incorrectly aligned or overlapped by a non-object field.'

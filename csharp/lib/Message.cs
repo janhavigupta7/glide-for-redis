@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Threading.Tasks.Sources;
+using System.Diagnostics;
 
 /// Reusable source of ValueTask. This object can be allocated once and then reused
 /// to create multiple asynchronous operations, as long as each call to CreateTask
@@ -15,6 +16,7 @@ internal class Message<T> : IValueTaskSource<T>
 
     /// The pointer to the unmanaged memory that contains the operation's key.
     public IntPtr ValuePtr { get; private set; }
+    public Stopwatch stopWatch  { get; private set; }
 
     public Message(uint index)
     {
@@ -35,6 +37,8 @@ internal class Message<T> : IValueTaskSource<T>
     public async ValueTask<T> CreateTask(string? key, string? value, object client)
     {
         this.client = client;
+        this.stopWatch = new Stopwatch();
+        this.stopWatch.Start();
         this.KeyPtr = key is null ? IntPtr.Zero : Marshal.StringToHGlobalAnsi(key);
         this.ValuePtr = value is null ? IntPtr.Zero : Marshal.StringToHGlobalAnsi(value);
         var result = await new ValueTask<T>(this, _source.Version);
