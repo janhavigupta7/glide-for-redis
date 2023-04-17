@@ -322,7 +322,7 @@ public static class MainClass
             var clients = await createClients(clientCount, async () =>
                 {
                     Console.WriteLine("New client");
-                    var babushka_client = await AsyncSocketClientBlockPipeTry.CreateSocketClient(host, 6379, useTLS);
+                    var babushka_client = await AsyncSocketClientBlockPipeTryUnofficial.CreateSocketClient(host, 6379, useTLS);
                     Console.WriteLine($"New client post creation babushka_client = {babushka_client}");
                     return (async (key) => $"{await babushka_client.GetAsync(key)}",
                             async (key, value) => await babushka_client.SetAsync(key, value),

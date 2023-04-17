@@ -372,7 +372,7 @@ namespace babushka
         {
             Console.WriteLine("ConnectToSocket AsyncSocketClientBlockPipeTry");
 
-            var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+            var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.IP);
             var endpoint = new UnixDomainSocketEndPoint(socketAddress);
             socket.Blocking = true;
             socket.Connect(endpoint);
@@ -382,7 +382,7 @@ namespace babushka
         protected override void WriteToSocket(IMessage writeRequest)
         {
             //            Console.WriteLine("WriteToSocket AsyncSocketClientBlockPipeTry");
-
+    
             //
             MemoryStream memstream = new MemoryStream();
             
