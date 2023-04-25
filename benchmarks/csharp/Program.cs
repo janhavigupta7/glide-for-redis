@@ -137,13 +137,15 @@ public static class MainClass
             switch (action)
             {
                 case ChosenAction.GET_EXISTING:
-                    await client.get(generate_key_set());
+                    //await client.get(generate_key_set());
+                    await client.get(generate_key_get());
                     break;
                 case ChosenAction.GET_NON_EXISTING:
                     await client.get(generate_key_get());
                     break;
                 case ChosenAction.SET:
-                    await client.set(generate_key_set(), data);
+                    await client.get(generate_key_get());
+                   // await client.set(generate_key_set(), data);
                     break;
             }
             stopwatch.Stop();

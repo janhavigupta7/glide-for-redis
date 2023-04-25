@@ -13,15 +13,25 @@ using Pipelines.Sockets.Unofficial;
 
 namespace babushka
 {
-    public class AsyncSocketClientBlockPipeTryUnofficial : AsyncSocketClientBase : IDisposable
+    public class AsyncSocketClientBlockPipeTryUnofficial : AsyncSocketClientBase 
     {
-        #region public methods
         private const int MINIMUM_SEGMENT_SIZE = 8 * 1024;
-
+        
+        #region public methods
+        
         public static async ValueTask<IAsyncSocketClient?> CreateSocketClient(string host, uint port, bool useTLS)
         {
 
-            PipeScheduler Scheduler = PipeScheduler.ThreadPool;
+            DedicatedThreadPoolPipeScheduler ReadScheduler = new DedicatedThreadPoolPipeScheduler("SOCKETMANAGER:Read",
+                 workerCount: 1,
+                 priority: ThreadPriority.AboveNormal);
+            DedicatedThreadPoolPipeScheduler WriteScheduler = new DedicatedThreadPoolPipeScheduler("SOCKETMANAGER:Write",
+                 workerCount: 1,
+                 priority: ThreadPriority.AboveNormal);
+            DedicatedThreadPoolPipeScheduler Scheduler = new DedicatedThreadPoolPipeScheduler("SOCKETMANAGER:All",
+                 workerCount: 10,
+                 priority: ThreadPriority.AboveNormal);
+            //PipeScheduler Scheduler = PipeScheduler.ThreadPool;
 
             const long Receive_PauseWriterThreshold = 4L * 1024 * 1024 * 1024; // receive: let's give it up to 4GiB of buffer for now
             const long Receive_ResumeWriterThreshold = 3L * 1024 * 1024 * 1024; // (large replies get crazy big)
@@ -149,8 +159,8 @@ namespace babushka
             T_read1.Priority = ThreadPriority.Highest;        
             T_read2.Priority = ThreadPriority.Highest;        
 
-            Thread T_write1 = new Thread(()=>StartListeningOnWriteChannel(socket1, pipe1));
-            Thread T_write2 = new Thread(()=>StartListeningOnWriteChannel(socket1, pipe2));
+            Thread T_write1 = new Thread(()=>StartListeningOnWriteChannel(socket1, pipe1!, writeRequestsChannel1));
+            Thread T_write2 = new Thread(()=>StartListeningOnWriteChannel(socket2, pipe2!, writeRequestsChannel2));
             T_write1.Name = "SendingSocket1";
             T_write2.Name = "SendingSocket2";
             Console.WriteLine("Start T1 and T2 AsyncSocketClientBlockPipeTryUnofficial");            
@@ -170,18 +180,31 @@ namespace babushka
         }
 
 
-        private async void StartListeningOnWriteChannel(Socket socket, IDuplexPipe pipe)
+        private async void StartListeningOnWriteChannel(Socket socket, IDuplexPipe pipe, Channel<IMessage> writeRequestsChannelp)
         {
-               
+               //const int minimumBufferSize = 512*16;
                 while (socket.Connected)
                 {
-                    await this.writeRequestsChannel.Reader.WaitToReadAsync();
-                    this.writeRequestsChannel.Reader.TryRead(out var writeRequest);                    
+                    //Console.WriteLine(" StartListeningOnWriteChannel WaitToReadAsync!!!"); 
+                    await writeRequestsChannelp.Reader.WaitToReadAsync();
+                    int ttl = 10;
                     var output = pipe.Output;
+                    while (ttl != 0 && writeRequestsChannelp.Reader.TryRead(out var writeRequest))
+                    {
+                        --ttl;
+                        writeRequest.WriteDelimitedTo(output.AsStream());
+                    }
                     
                     
-                    var memory = output.GetMemory(writeRequest!.Length);                                        
+            //        var memory = output.GetMemory(minimumBufferSize);                   
+              //      MemoryStream memstream = new MemoryStream();
+                                
+        
                     
+            
+                    //Console.WriteLine($" StartListeningOnWriteChannel WaitToReadAsync!!! length = {writeRequest!.ToString()}");                                          
+                    
+                    //output.Advance(writeRequest!.Length*2);
                     //Console.WriteLine($"Flush:IsCompleted:{flushResult.IsCompleted}, IsCanceled:{flushResult.IsCanceled}");   
                     var flushResult = await output.FlushAsync();
                 }               
@@ -220,23 +243,38 @@ namespace babushka
             }
         }
 
-        private void StartListeningOnReadSocket(Socket socket, IDuplexPipe? pipe)
+        private async void StartListeningOnReadSocket(Socket socket, IDuplexPipe? pipe)
         {
             //Task.Run(() =>
             //{
                 
- 
-                var reader = pipe!.Input;
+                var input = pipe!.Input;
+                
                 double elaspsedTimeParse = 0;
                 int countParse = 0;
                 int CountMessage = 0;
                 while (true){
                     var stopwatch = new Stopwatch();
                     stopwatch.Start();
-                        
-                    var responseFromSocket = Response.Response.Parser.ParseDelimitedFrom(reader.AsStream(true)); //ParseDelimitedFrom(buffer);
+
+             /*       //Console.WriteLine($"Reading...");
+                    Console.WriteLine("StartListeningOnReadSocket Before read message");    
+                    var readResult = await input.ReadAsync();
+                    Console.WriteLine($"IsCompleted:{readResult.IsCompleted}, IsCanceled:{readResult.IsCanceled}, Length:{readResult.Buffer.Length}");
+                    if (readResult.IsCompleted || readResult.IsCanceled) break;
+                    var buffer = readResult.Buffer;
+                    var len = checked((int)buffer.Length);
+                    var arr = ArrayPool<byte>.Shared.Rent(len);
+                    buffer.CopyTo(arr);
+                    //var newBuffer = ParseReadResults(arr, len, messageContainer);
+                    //input.AdvanceTo(len, readResult.Buffer.End); // TODO: fix this, probably broken
+                    ArrayPool<byte>.Shared.Return(arr);*/
+
+
+                    //Console.WriteLine("StartListeningOnReadSocket Before read message");    
+                    var responseFromSocket = Response.Response.Parser.ParseDelimitedFrom(input.AsStream(true)); //ParseDelimitedFrom(buffer);
             
-                // Console.WriteLine("StartListeningOnReadSocket", $"read {responseFromSocket} message");
+                    //Console.WriteLine($"StartListeningOnReadSocket read {responseFromSocket} message");
                     Logger.Log(Level.Trace, "StartListeningOnReadSocket", $"read {responseFromSocket} message");
                     if (responseFromSocket != null && responseFromSocket.ValueCase != Response.Response.ValueOneofCase.ClosingError)
                     {
@@ -261,7 +299,7 @@ namespace babushka
                         Console.WriteLine($"ParseAverageTime = {elaspsedTimeParse/500000}");
                         elaspsedTimeParse = 0;   
                     }
-                }
+                } 
 
         }
 
@@ -281,31 +319,39 @@ namespace babushka
 
         protected override void WriteToSocket(IMessage writeRequest)
         {
-            //            Console.WriteLine("WriteToSocket AsyncSocketClientBlockPipeTryUnofficial");
+            //Console.WriteLine("WriteToSocket AsyncSocketClientBlockPipeTryUnofficial");
     
             //
-            MemoryStream memstream = new MemoryStream();
+            //MemoryStream memstream = new MemoryStream();
             
             var stopwatch = new Stopwatch();
             stopwatch.Start();
         
-            writeRequest.WriteDelimitedTo(memstream);
+            //writeRequest.WriteDelimitedTo(memstream);
             
                   
 
-            byte[] messageBuffer = memstream.ToArray();
+            //byte[] messageBuffer = memstream.ToArray();
             //Console.WriteLine($"writeRequest = {writeRequest.ToString()}");
 
             if (IsDisposed)
             {
                 throw new ObjectDisposedException(null);
             }
-            if (!this.writeRequestsChannel.Writer.TryWrite(messageBuffer))
-            {
-                throw new ObjectDisposedException("Writing after channel is closed");
-            }
-            //
             countWrite++;
+            if (countWrite % 2 == 0){
+                if (!this.writeRequestsChannel1.Writer.TryWrite(writeRequest))
+                {
+                    throw new ObjectDisposedException("Writing after channel is closed");
+                }
+            } else {
+                if (!this.writeRequestsChannel2.Writer.TryWrite(writeRequest))
+                {
+                    throw new ObjectDisposedException("Writing after channel is closed");
+                }
+            } 
+            //
+            
             stopwatch.Stop();            
             elaspsedTimeWrite += (double)(stopwatch.ElapsedMilliseconds);
             if (countWrite % 500000 == 0)
@@ -329,7 +375,14 @@ namespace babushka
             }
         }
 
-        private readonly Channel<Byte[]> writeRequestsChannel = Channel.CreateUnbounded<Byte[]>(new UnboundedChannelOptions
+        private readonly Channel<IMessage> writeRequestsChannel1 = Channel.CreateUnbounded<IMessage>(new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = false,
+            AllowSynchronousContinuations = false
+        });
+
+        private readonly Channel<IMessage> writeRequestsChannel2 = Channel.CreateUnbounded<IMessage>(new UnboundedChannelOptions
         {
             SingleReader = true,
             SingleWriter = false,
@@ -343,7 +396,7 @@ namespace babushka
                 using (var stream = new NetworkStream(socket, FileAccess.Read, false))
                 {
                     var responseFromSocket = await Task.Run(() => Response.Response.Parser.ParseDelimitedFrom(stream));
-                    
+                    Console.WriteLine($"ReadFromSocket read {responseFromSocket} message");
                     Logger.Log(Level.Info, "ReadFromSocket", $"read {responseFromSocket} message");
                     return responseFromSocket;
                 }

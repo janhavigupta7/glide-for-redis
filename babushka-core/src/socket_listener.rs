@@ -31,7 +31,7 @@ use tokio_util::task::LocalPoolHandle;
 use ClosingReason::*;
 use PipeListeningResult::*;
 use rand::Rng;
-
+use tokio::time::{sleep, Duration};
 
 /// The socket file name
 const SOCKET_FILE_NAME: &str = "babushka-socket";
@@ -131,6 +131,8 @@ async fn write_to_output(writer: &Rc<Writer>) {
         if output.is_empty() {
             return;
         }
+//        sleep(Duration::from_micros(100)).await; // TODO: fix it
+
         let mut total_written_bytes = 0;
         while total_written_bytes < output.len() {
             if let Err(err) = writer.socket.writable().await {

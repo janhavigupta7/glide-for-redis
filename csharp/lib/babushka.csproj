@@ -17,6 +17,6 @@
     </Content>
     <PackageReference Include="Google.Protobuf" Version="4.0.0-rc2" />
     <PackageReference Include="System.IO.Pipelines" Version="7.0.0" />
-    <PackageReference Include="Pipelines.Sockets.Unofficial" />
+    <PackageReference Include="Pipelines.Sockets.Unofficial" Version="2.2.2" />
   </ItemGroup>
 </Project>
