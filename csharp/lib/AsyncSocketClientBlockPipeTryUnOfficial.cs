@@ -67,11 +67,20 @@ namespace babushka
 
             var socketName2 = await GetSocketNameAsync();
             var socket2 = await GetSocketAsync(socketName2, host, port, useTLS);
+
+            var socketName3 = await GetSocketNameAsync();
+            var socket3 = await GetSocketAsync(socketName3, host, port, useTLS);
+
+            var socketName4 = await GetSocketNameAsync();
+            var socket4 = await GetSocketAsync(socketName4, host, port, useTLS);
+
             Console.WriteLine($"New client post creation socketName = {socketName1}, {socketName2}");
             Console.WriteLine($"New client post creation socket = {socket1}");
 
             IDuplexPipe pipe1 = SocketConnection.Create(socket1, SendPipeOptions, ReceivePipeOptions, name: "babuska pipe1");
             IDuplexPipe pipe2 = SocketConnection.Create(socket2, SendPipeOptions, ReceivePipeOptions, name: "babuska pipe2");
+            IDuplexPipe pipe3 = SocketConnection.Create(socket3, SendPipeOptions, ReceivePipeOptions, name: "babuska pipe3");
+            IDuplexPipe pipe4 = SocketConnection.Create(socket4, SendPipeOptions, ReceivePipeOptions, name: "babuska pipe4");
           /*  await WriteToSocket(socket1, pipe1, new[] { new WriteRequest { args = new() { address }, type = RequestType.SetServerAddress, callbackIndex = 0 } }, new());
             //var buffer = new byte[HEADER_LENGTH_IN_BYTES];
 
@@ -95,7 +104,7 @@ namespace babushka
 
             // if logger has been initialized by the external-user on info level this log will be shown
             Logger.Log(Level.Info, "connection info", "new connection established");
-            return (socket1 == null || socket2 == null) ? null : new AsyncSocketClientBlockPipeTryUnofficial(socket1, socket2, pipe1, pipe2);
+            return (socket1 == null || socket2 == null || socket3 == null || socket4 == null) ? null : new AsyncSocketClientBlockPipeTryUnofficial(socket1, socket2, socket3, socket4, pipe1, pipe2, pipe3, pipe4);
         }
 
         #endregion public methods
@@ -130,6 +139,8 @@ namespace babushka
 
         private NetworkStream writeStream1;
         private NetworkStream writeStream2;
+        private NetworkStream writeStream3;
+        private NetworkStream writeStream4;
 
         Double elaspsedTimeWrite = 0;
         int countWrite = 0;
@@ -146,31 +157,48 @@ namespace babushka
 
         #region Private Methods
 
-        private AsyncSocketClientBlockPipeTryUnofficial(Socket socket1,Socket socket2, IDuplexPipe? pipe1 = null, IDuplexPipe? pipe2 = null)
+        private AsyncSocketClientBlockPipeTryUnofficial(Socket socket1, Socket socket2, Socket socket3, Socket socket4, 
+                                                        IDuplexPipe? pipe1 = null, IDuplexPipe? pipe2 = null, IDuplexPipe? pipe3 = null, IDuplexPipe? pipe4 = null)
         {
             this.socket1 = socket1;
-            this.writeStream1 = new NetworkStream(socket1, FileAccess.Write, false);
             this.socket2 = socket2;
+            this.socket3 = socket3;
+            this.socket4 = socket4;
+            this.pipe1 = pipe1;
+            this.pipe2 = pipe2;
+            this.pipe3 = pipe3;
+            this.pipe4 = pipe4;
+            this.writeStream1 = new NetworkStream(socket1, FileAccess.Write, false);            
             this.writeStream2 = new NetworkStream(socket2, FileAccess.Write, false);
+            this.writeStream3 = new NetworkStream(socket3, FileAccess.Write, false);
+            this.writeStream4 = new NetworkStream(socket4, FileAccess.Write, false);
             Thread T_read1 = new Thread(()=> StartListeningOnReadSocket(socket1, pipe1));
             Thread T_read2 = new Thread(()=> StartListeningOnReadSocket(socket2, pipe2));
+            Thread T_read3 = new Thread(()=> StartListeningOnReadSocket(socket3, pipe3));
+            Thread T_read4 = new Thread(()=> StartListeningOnReadSocket(socket3, pipe4));
             T_read1.Name = "ReadSocket1";
             T_read2.Name = "ReadSocket2";
+            T_read2.Name = "ReadSocket3";
+            T_read2.Name = "ReadSocket4";
             T_read1.Priority = ThreadPriority.Highest;        
             T_read2.Priority = ThreadPriority.Highest;        
+            T_read3.Priority = ThreadPriority.Highest;        
+            T_read4.Priority = ThreadPriority.Highest;        
 
-            Thread T_write1 = new Thread(()=>StartListeningOnWriteChannel(socket1, pipe1!, writeRequestsChannel1));
-            Thread T_write2 = new Thread(()=>StartListeningOnWriteChannel(socket2, pipe2!, writeRequestsChannel2));
-            T_write1.Name = "SendingSocket1";
-            T_write2.Name = "SendingSocket2";
+           // Thread T_write1 = new Thread(()=>StartListeningOnWriteChannel(socket1, pipe1!, writeRequestsChannel1));
+            //Thread T_write2 = new Thread(()=>StartListeningOnWriteChannel(socket2, pipe2!, writeRequestsChannel2));
+            //T_write1.Name = "SendingSocket1";
+            //T_write2.Name = "SendingSocket2";
             Console.WriteLine("Start T1 and T2 AsyncSocketClientBlockPipeTryUnofficial");            
-            T_write1.Priority = ThreadPriority.Highest;        
-            T_write2.Priority = ThreadPriority.Highest;        
+            //T_write1.Priority = ThreadPriority.Highest;        
+            //T_write2.Priority = ThreadPriority.Highest;        
             
             T_read1.Start();
             T_read2.Start();
-            T_write1.Start();
-            T_write2.Start();
+            T_read3.Start();
+            T_read4.Start();
+            //T_write1.Start();
+            //T_write2.Start();
             Console.WriteLine("After Start T1 AsyncSocketClientBlockPipeTryUnofficial");          
         }
 
@@ -339,16 +367,37 @@ namespace babushka
                 throw new ObjectDisposedException(null);
             }
             countWrite++;
-            if (countWrite % 2 == 0){
-                if (!this.writeRequestsChannel1.Writer.TryWrite(writeRequest))
+            if (countWrite % 4 == 0){
+                 
+                    
+                    var output = this.pipe1!.Output;                    
+                    writeRequest.WriteDelimitedTo(output.AsStream());
+                    
+                /*if (!this.writeRequestsChannel1.Writer.TryWrite(writeRequest))
                 {
                     throw new ObjectDisposedException("Writing after channel is closed");
-                }
-            } else {
-                if (!this.writeRequestsChannel2.Writer.TryWrite(writeRequest))
+                }*/
+            } else if (countWrite % 4 == 1){
+                var output = this.pipe2!.Output;                    
+                writeRequest.WriteDelimitedTo(output.AsStream());
+                /*if (!this.writeRequestsChannel2.Writer.TryWrite(writeRequest))
                 {
                     throw new ObjectDisposedException("Writing after channel is closed");
-                }
+                }*/            
+            } else if (countWrite % 4 == 2){
+                var output = this.pipe3!.Output;                    
+                writeRequest.WriteDelimitedTo(output.AsStream());
+                /*if (!this.writeRequestsChannel2.Writer.TryWrite(writeRequest))
+                {
+                    throw new ObjectDisposedException("Writing after channel is closed");
+                }*/            
+            } else{
+                var output = this.pipe4!.Output;                    
+                writeRequest.WriteDelimitedTo(output.AsStream());
+                /*if (!this.writeRequestsChannel2.Writer.TryWrite(writeRequest))
+                {
+                    throw new ObjectDisposedException("Writing after channel is closed");
+                }*/
             } 
             //
             

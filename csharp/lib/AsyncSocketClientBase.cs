@@ -6,6 +6,8 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Google.Protobuf;
 using System.Diagnostics;
+using System.IO.Pipelines;
+using Pipelines.Sockets.Unofficial;
 
 namespace babushka
 {
@@ -123,6 +125,8 @@ namespace babushka
             }
             this.socket1!.Close();
             this.socket2!.Close();
+            this.socket3!.Close();
+            this.socket4!.Close();
             messageContainer.DisposeWithError(error);
         }
 
@@ -198,6 +202,16 @@ namespace babushka
 
         protected Socket? socket1;
         protected Socket? socket2;
+
+        protected Socket? socket3;
+        protected Socket? socket4;
+
+        protected IDuplexPipe? pipe1;
+        protected IDuplexPipe? pipe2;
+
+        protected IDuplexPipe? pipe3;
+
+        protected IDuplexPipe? pipe4;
 
 
         Double elaspsedTimeGetMessage = 0;
