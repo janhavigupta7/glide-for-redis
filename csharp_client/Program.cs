@@ -58,7 +58,7 @@ namespace HelloWorld
             //     Socket client received acknowledgment: "<|ACK|>"
             ++count;
             if (count == 1000000) {
-                stopwatch.Stop();            
+                stopwatch.Stop();                  
                 double elaspsedTimeWrite = (double)(stopwatch.ElapsedMilliseconds);
                 Console.WriteLine($"WriteAverageTime = {elaspsedTimeWrite/1000000.0}");
                 break;

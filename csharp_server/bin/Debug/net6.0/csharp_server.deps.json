@@ -9,7 +9,10 @@
       "csharp_server/1.0.0": {
         "dependencies": {
           "CommandLineParser": "2.9.1",
-          "LinqStatistics": "2.3.0"
+          "Google.Protobuf": "4.0.0-rc2",
+          "LinqStatistics": "2.3.0",
+          "Pipelines.Sockets.Unofficial": "2.2.2",
+          "System.IO.Pipelines": "7.0.0"
         },
         "runtime": {
           "csharp_server.dll": {}
@@ -23,6 +26,18 @@
           }
         }
       },
+      "Google.Protobuf/4.0.0-rc2": {
+        "dependencies": {
+          "System.Memory": "4.5.2",
+          "System.Runtime.CompilerServices.Unsafe": "4.5.2"
+        },
+        "runtime": {
+          "lib/netstandard2.0/Google.Protobuf.dll": {
+            "assemblyVersion": "4.0.0.0",
+            "fileVersion": "4.0.0.0"
+          }
+        }
+      },
       "LinqStatistics/2.3.0": {
         "runtime": {
           "lib/netstandard1.1/LinqStatistics.dll": {
@@ -30,7 +45,28 @@
             "fileVersion": "2.3.0.0"
           }
         }
-      }
+      },
+      "Pipelines.Sockets.Unofficial/2.2.2": {
+        "dependencies": {
+          "System.IO.Pipelines": "7.0.0"
+        },
+        "runtime": {
+          "lib/net5.0/Pipelines.Sockets.Unofficial.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "2.2.2.34088"
+          }
+        }
+      },
+      "System.IO.Pipelines/7.0.0": {
+        "runtime": {
+          "lib/net6.0/System.IO.Pipelines.dll": {
+            "assemblyVersion": "7.0.0.0",
+            "fileVersion": "7.0.22.51805"
+          }
+        }
+      },
+      "System.Memory/4.5.2": {},
+      "System.Runtime.CompilerServices.Unsafe/4.5.2": {}
     }
   },
   "libraries": {
@@ -46,12 +82,47 @@
       "path": "commandlineparser/2.9.1",
       "hashPath": "commandlineparser.2.9.1.nupkg.sha512"
     },
+    "Google.Protobuf/4.0.0-rc2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-cYJHhfYFD5u24sLiZuvO2hQqY34Z05eJPxRJfFYSFKjib0jinE3XepgTouh+eTBx/WpXFFAZt9yYRXSEZDJgfA==",
+      "path": "google.protobuf/4.0.0-rc2",
+      "hashPath": "google.protobuf.4.0.0-rc2.nupkg.sha512"
+    },
     "LinqStatistics/2.3.0": {
       "type": "package",
       "serviceable": true,
       "sha512": "sha512-GxQ0IXJXNjUqjhoutVQhZgNyLySrTGnsOk2iCQQwkzj5Fnl3q4FUkMPzjLN/0XP+psGClYk4CXQYpGFi+F80Fg==",
       "path": "linqstatistics/2.3.0",
       "hashPath": "linqstatistics.2.3.0.nupkg.sha512"
+    },
+    "Pipelines.Sockets.Unofficial/2.2.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-Bhk0FWxH1paI+18zr1g5cTL+ebeuDcBCR+rRFO+fKEhretgjs7MF2Mc1P64FGLecWp4zKCUOPzngBNrqVyY7Zg==",
+      "path": "pipelines.sockets.unofficial/2.2.2",
+      "hashPath": "pipelines.sockets.unofficial.2.2.2.nupkg.sha512"
+    },
+    "System.IO.Pipelines/7.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-jRn6JYnNPW6xgQazROBLSfpdoczRw694vO5kKvMcNnpXuolEixUyw6IBuBs2Y2mlSX/LdLvyyWmfXhaI3ND1Yg==",
+      "path": "system.io.pipelines/7.0.0",
+      "hashPath": "system.io.pipelines.7.0.0.nupkg.sha512"
+    },
+    "System.Memory/4.5.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-fvq1GNmUFwbKv+aLVYYdgu/+gc8Nu9oFujOxIjPrsf+meis9JBzTPDL6aP/eeGOz9yPj6rRLUbOjKMpsMEWpNg==",
+      "path": "system.memory/4.5.2",
+      "hashPath": "system.memory.4.5.2.nupkg.sha512"
+    },
+    "System.Runtime.CompilerServices.Unsafe/4.5.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-wprSFgext8cwqymChhrBLu62LMg/1u92bU+VOwyfBimSPVFXtsNqEWC92Pf9ofzJFlk4IHmJA75EDJn1b2goAQ==",
+      "path": "system.runtime.compilerservices.unsafe/4.5.2",
+      "hashPath": "system.runtime.compilerservices.unsafe.4.5.2.nupkg.sha512"
     }
   }
 }

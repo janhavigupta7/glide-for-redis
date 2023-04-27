@@ -42,9 +42,21 @@
               "target": "Package",
               "version": "[2.9.1, )"
             },
+            "Google.Protobuf": {
+              "target": "Package",
+              "version": "[4.0.0-rc2, )"
+            },
             "LinqStatistics": {
               "target": "Package",
               "version": "[2.3.0, )"
+            },
+            "Pipelines.Sockets.Unofficial": {
+              "target": "Package",
+              "version": "[2.2.2, )"
+            },
+            "System.IO.Pipelines": {
+              "target": "Package",
+              "version": "[7.0.0, )"
             }
           },
           "imports": [

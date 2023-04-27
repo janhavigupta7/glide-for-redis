@@ -10,6 +10,7 @@ using Google.Protobuf;
 using System.IO.Pipelines;
 using System.Diagnostics;
 using Pipelines.Sockets.Unofficial;
+using System.Net;
 
 namespace babushka
 {
@@ -63,16 +64,16 @@ namespace babushka
 
       
             var socketName1 = await GetSocketNameAsync();
-            var socket1 = await GetSocketAsync(socketName1, host, port, useTLS);
+            var socket1 = await GetSocketAsync("/tmp/asaf1", host, port, useTLS, 11223);
 
             var socketName2 = await GetSocketNameAsync();
-            var socket2 = await GetSocketAsync(socketName2, host, port, useTLS);
+            var socket2 = await GetSocketAsync("/tmp/asaf2", host, port, useTLS, 11224);
 
             var socketName3 = await GetSocketNameAsync();
-            var socket3 = await GetSocketAsync(socketName3, host, port, useTLS);
+            var socket3 = await GetSocketAsync("/tmp/asaf3", host, port, useTLS, 11225);
 
             var socketName4 = await GetSocketNameAsync();
-            var socket4 = await GetSocketAsync(socketName4, host, port, useTLS);
+            var socket4 = await GetSocketAsync("/tmp/asaf4", host, port, useTLS, 11226);
 
             Console.WriteLine($"New client post creation socketName = {socketName1}, {socketName2}");
             Console.WriteLine($"New client post creation socket = {socket1}");
@@ -111,9 +112,9 @@ namespace babushka
 
         #region Protecte Members
         /// Returns a new ready to use socket.
-        protected static async ValueTask<Socket?> GetSocketAsync(string socketName, string host, uint port, bool useTLS)
+        protected static async ValueTask<Socket?> GetSocketAsync(string socketName, string host, uint port, bool useTLS, int serverPort)
         {
-            var socket = ConnectToSocket(socketName);
+            var socket = ConnectToSocket(socketName, serverPort);
 
             var request = new ConnectionRequest.ConnectionRequest { UseTls = useTLS, ResponseTimeout = 60, ConnectionTimeout = 600 };
             request.Addresses.Add(new ConnectionRequest.AddressInfo() { Host = host, Port = port });
@@ -125,9 +126,11 @@ namespace babushka
             var response = await ReadFromSocket(socket);
             if (response == null)
             {
-                Logger.Log(Level.Error, "AsyncSocketClient.GetSocketAsync", "socket connection failed");
-                socket.Dispose();
-                return null;
+                Console.WriteLine($"response error = {response}");            
+                return socket;
+                //Logger.Log(Level.Error, "AsyncSocketClient.GetSocketAsync", "socket connection failed");
+                //socket.Dispose();
+                //return null;
             }
             return socket;
         }
@@ -334,12 +337,15 @@ namespace babushka
         
 
         
-        private static Socket ConnectToSocket(string socketAddress)
+        private static Socket ConnectToSocket(string socketAddress, int port)
         {
             Console.WriteLine("ConnectToSocket AsyncSocketClientBlockPipeTryUnofficial");
 
-            var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.IP);
-            var endpoint = new UnixDomainSocketEndPoint(socketAddress);
+            ///var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.IP);
+            //var endpoint = new UnixDomainSocketEndPoint(socketAddress);
+            IPEndPoint endpoint = new IPEndPoint(IPAddress.Parse("127.0.0.1"), port); 
+            var socket = new Socket(endpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            
             socket.Blocking = true;
             socket.Connect(endpoint);
             return socket;

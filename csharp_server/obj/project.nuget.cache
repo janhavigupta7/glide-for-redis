@@ -1,11 +1,16 @@
 {
   "version": 2,
-  "dgSpecHash": "cC+qhWSAvBBjX5olx0Sn+HE+2PCirFJbGt/rVVm2t5ikKcu9Qb7n7uOTLzhdq1xDjdUGl4xBZXlYZaTuDOKl3w==",
+  "dgSpecHash": "GjyFP580u+5k14YBDySllUAnjUiqkRaePafnskY92j35sIx25E5gGozhQ57uVKeco1x1a3T/LCyeXD8CtjQ9GQ==",
   "success": true,
   "projectFilePath": "/home/ubuntu/work/babushka/csharp_server/csharp_server.csproj",
   "expectedPackageFiles": [
     "/home/ubuntu/.nuget/packages/commandlineparser/2.9.1/commandlineparser.2.9.1.nupkg.sha512",
-    "/home/ubuntu/.nuget/packages/linqstatistics/2.3.0/linqstatistics.2.3.0.nupkg.sha512"
+    "/home/ubuntu/.nuget/packages/google.protobuf/4.0.0-rc2/google.protobuf.4.0.0-rc2.nupkg.sha512",
+    "/home/ubuntu/.nuget/packages/linqstatistics/2.3.0/linqstatistics.2.3.0.nupkg.sha512",
+    "/home/ubuntu/.nuget/packages/pipelines.sockets.unofficial/2.2.2/pipelines.sockets.unofficial.2.2.2.nupkg.sha512",
+    "/home/ubuntu/.nuget/packages/system.io.pipelines/7.0.0/system.io.pipelines.7.0.0.nupkg.sha512",
+    "/home/ubuntu/.nuget/packages/system.memory/4.5.2/system.memory.4.5.2.nupkg.sha512",
+    "/home/ubuntu/.nuget/packages/system.runtime.compilerservices.unsafe/4.5.2/system.runtime.compilerservices.unsafe.4.5.2.nupkg.sha512"
   ],
   "logs": []
 }
