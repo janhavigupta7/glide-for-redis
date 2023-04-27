@@ -168,18 +168,18 @@ namespace babushka
             this.pipe2 = pipe2;
             this.pipe3 = pipe3;
             this.pipe4 = pipe4;
-            this.writeStream1 = new NetworkStream(socket1, FileAccess.Write, false);            
-            this.writeStream2 = new NetworkStream(socket2, FileAccess.Write, false);
-            this.writeStream3 = new NetworkStream(socket3, FileAccess.Write, false);
-            this.writeStream4 = new NetworkStream(socket4, FileAccess.Write, false);
+         //   this.writeStream1 = new NetworkStream(socket1, FileAccess.Write, false);            
+            //this.writeStream2 = new NetworkStream(socket2, FileAccess.Write, false);
+            //this.writeStream3 = new NetworkStream(socket3, FileAccess.Write, false);
+            //this.writeStream4 = new NetworkStream(socket4, FileAccess.Write, false);
             Thread T_read1 = new Thread(()=> StartListeningOnReadSocket(socket1, pipe1));
             Thread T_read2 = new Thread(()=> StartListeningOnReadSocket(socket2, pipe2));
             Thread T_read3 = new Thread(()=> StartListeningOnReadSocket(socket3, pipe3));
             Thread T_read4 = new Thread(()=> StartListeningOnReadSocket(socket3, pipe4));
             T_read1.Name = "ReadSocket1";
             T_read2.Name = "ReadSocket2";
-            T_read2.Name = "ReadSocket3";
-            T_read2.Name = "ReadSocket4";
+            T_read3.Name = "ReadSocket3";
+            T_read4.Name = "ReadSocket4";
             T_read1.Priority = ThreadPriority.Highest;        
             T_read2.Priority = ThreadPriority.Highest;        
             T_read3.Priority = ThreadPriority.Highest;        
@@ -278,12 +278,12 @@ namespace babushka
                 
                 var input = pipe!.Input;
                 
-                double elaspsedTimeParse = 0;
-                int countParse = 0;
+                //double elaspsedTimeParse = 0;
+                //int countParse = 0;
                 int CountMessage = 0;
                 while (true){
-                    var stopwatch = new Stopwatch();
-                    stopwatch.Start();
+                    //var stopwatch = new Stopwatch();
+                    //stopwatch.Start();
 
              /*       //Console.WriteLine($"Reading...");
                     Console.WriteLine("StartListeningOnReadSocket Before read message");    
@@ -303,30 +303,30 @@ namespace babushka
                     var responseFromSocket = Response.Response.Parser.ParseDelimitedFrom(input.AsStream(true)); //ParseDelimitedFrom(buffer);
             
                     //Console.WriteLine($"StartListeningOnReadSocket read {responseFromSocket} message");
-                    Logger.Log(Level.Trace, "StartListeningOnReadSocket", $"read {responseFromSocket} message");
+                    //Logger.Log(Level.Trace, "StartListeningOnReadSocket", $"read {responseFromSocket} message");
                     if (responseFromSocket != null && responseFromSocket.ValueCase != Response.Response.ValueOneofCase.ClosingError)
                     {
                     //  Console.WriteLine("Resolve message");
                         uint callbackIndex = responseFromSocket.CallbackIdx;
                         var message = messageContainer.GetMessage((int)callbackIndex);
-                        if (CountMessage % 500000 == 0){
-                            message.stopWatch.Stop();
-                            double messageTime = (double)(message.stopWatch.ElapsedMilliseconds);
-                            Console.WriteLine($"StartListeningOnReadSocket CountMessage = {CountMessage} message time = {messageTime}");                        
-                        }
+//                        if (CountMessage % 500000 == 0){
+                      //      message.stopWatch.Stop();
+  //                          double messageTime = (double)(message.stopWatch.ElapsedMilliseconds);
+    //                        Console.WriteLine($"StartListeningOnReadSocket CountMessage = {CountMessage} message time = {messageTime}");                        
+      //                  }
                         CountMessage++;
                         ResolveMessage(message, responseFromSocket);
                     }
-                    stopwatch.Stop();            
-                    elaspsedTimeParse += (double)(stopwatch.ElapsedMilliseconds);
-                    countParse++;
-                    if (countParse % 500000 == 0)
-                    {
+        //            stopwatch.Stop();            
+          //          elaspsedTimeParse += (double)(stopwatch.ElapsedMilliseconds);
+                    //countParse++;
+            //        if (countParse % 500000 == 0)
+              //      {
                         
                         
-                        Console.WriteLine($"ParseAverageTime = {elaspsedTimeParse/500000}");
-                        elaspsedTimeParse = 0;   
-                    }
+                //        Console.WriteLine($"ParseAverageTime = {elaspsedTimeParse/500000}");
+                  //      elaspsedTimeParse = 0;   
+                    //}
                 } 
 
         }
@@ -352,8 +352,8 @@ namespace babushka
             //
             //MemoryStream memstream = new MemoryStream();
             
-            var stopwatch = new Stopwatch();
-            stopwatch.Start();
+//            var stopwatch = new Stopwatch();
+  //          stopwatch.Start();
         
             //writeRequest.WriteDelimitedTo(memstream);
             
@@ -366,8 +366,10 @@ namespace babushka
             {
                 throw new ObjectDisposedException(null);
             }
+            var rand = new Random();
             countWrite++;
-            if (countWrite % 4 == 0){
+            int temp = rand.Next(4);
+            if (temp % 4 == 0){
                  
                     
                     var output = this.pipe1!.Output;                    
@@ -377,14 +379,14 @@ namespace babushka
                 {
                     throw new ObjectDisposedException("Writing after channel is closed");
                 }*/
-            } else if (countWrite % 4 == 1){
+            } else if (temp % 4 == 1){
                 var output = this.pipe2!.Output;                    
                 writeRequest.WriteDelimitedTo(output.AsStream());
                 /*if (!this.writeRequestsChannel2.Writer.TryWrite(writeRequest))
                 {
                     throw new ObjectDisposedException("Writing after channel is closed");
                 }*/            
-            } else if (countWrite % 4 == 2){
+            } else if (temp % 4 == 2){
                 var output = this.pipe3!.Output;                    
                 writeRequest.WriteDelimitedTo(output.AsStream());
                 /*if (!this.writeRequestsChannel2.Writer.TryWrite(writeRequest))
@@ -401,14 +403,14 @@ namespace babushka
             } 
             //
             
-            stopwatch.Stop();            
+/*            stopwatch.Stop();            
             elaspsedTimeWrite += (double)(stopwatch.ElapsedMilliseconds);
             if (countWrite % 500000 == 0)
             {                                                                    
                         
                 Console.WriteLine($"WriteAverageTime = {elaspsedTimeWrite/500000}");
                 elaspsedTimeWrite = 0;   
-            }
+            }*/
         }
 
         private static void WriteToSocket(Socket socket, NetworkStream stream, IEnumerable<IMessage> WriteRequests)
