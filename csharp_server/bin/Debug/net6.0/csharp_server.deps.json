@@ -1,0 +1,57 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v6.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v6.0": {
+      "csharp_server/1.0.0": {
+        "dependencies": {
+          "CommandLineParser": "2.9.1",
+          "LinqStatistics": "2.3.0"
+        },
+        "runtime": {
+          "csharp_server.dll": {}
+        }
+      },
+      "CommandLineParser/2.9.1": {
+        "runtime": {
+          "lib/netstandard2.0/CommandLine.dll": {
+            "assemblyVersion": "2.9.1.0",
+            "fileVersion": "2.9.1.0"
+          }
+        }
+      },
+      "LinqStatistics/2.3.0": {
+        "runtime": {
+          "lib/netstandard1.1/LinqStatistics.dll": {
+            "assemblyVersion": "2.3.0.0",
+            "fileVersion": "2.3.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "csharp_server/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "CommandLineParser/2.9.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-OE0sl1/sQ37bjVsPKKtwQlWDgqaxWgtme3xZz7JssWUzg5JpMIyHgCTY9MVMxOg48fJ1AgGT3tgdH5m/kQ5xhA==",
+      "path": "commandlineparser/2.9.1",
+      "hashPath": "commandlineparser.2.9.1.nupkg.sha512"
+    },
+    "LinqStatistics/2.3.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-GxQ0IXJXNjUqjhoutVQhZgNyLySrTGnsOk2iCQQwkzj5Fnl3q4FUkMPzjLN/0XP+psGClYk4CXQYpGFi+F80Fg==",
+      "path": "linqstatistics/2.3.0",
+      "hashPath": "linqstatistics.2.3.0.nupkg.sha512"
+    }
+  }
+}

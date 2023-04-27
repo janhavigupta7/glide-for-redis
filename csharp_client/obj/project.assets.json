@@ -1,0 +1,177 @@
+{
+  "version": 3,
+  "targets": {
+    "net6.0": {
+      "CommandLineParser/2.9.1": {
+        "type": "package",
+        "compile": {
+          "lib/netstandard2.0/CommandLine.dll": {}
+        },
+        "runtime": {
+          "lib/netstandard2.0/CommandLine.dll": {}
+        }
+      },
+      "LinqStatistics/2.3.0": {
+        "type": "package",
+        "compile": {
+          "lib/netstandard1.1/LinqStatistics.dll": {}
+        },
+        "runtime": {
+          "lib/netstandard1.1/LinqStatistics.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "CommandLineParser/2.9.1": {
+      "sha512": "OE0sl1/sQ37bjVsPKKtwQlWDgqaxWgtme3xZz7JssWUzg5JpMIyHgCTY9MVMxOg48fJ1AgGT3tgdH5m/kQ5xhA==",
+      "type": "package",
+      "path": "commandlineparser/2.9.1",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "CommandLine20.png",
+        "License.md",
+        "README.md",
+        "commandlineparser.2.9.1.nupkg.sha512",
+        "commandlineparser.nuspec",
+        "lib/net40/CommandLine.dll",
+        "lib/net40/CommandLine.xml",
+        "lib/net45/CommandLine.dll",
+        "lib/net45/CommandLine.xml",
+        "lib/net461/CommandLine.dll",
+        "lib/net461/CommandLine.xml",
+        "lib/netstandard2.0/CommandLine.dll",
+        "lib/netstandard2.0/CommandLine.xml"
+      ]
+    },
+    "LinqStatistics/2.3.0": {
+      "sha512": "GxQ0IXJXNjUqjhoutVQhZgNyLySrTGnsOk2iCQQwkzj5Fnl3q4FUkMPzjLN/0XP+psGClYk4CXQYpGFi+F80Fg==",
+      "type": "package",
+      "path": "linqstatistics/2.3.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "lib/net40/LinqStatistics.XML",
+        "lib/net40/LinqStatistics.dll",
+        "lib/net40/LinqStatistics.pdb",
+        "lib/netstandard1.1/LinqStatistics.XML",
+        "lib/netstandard1.1/LinqStatistics.dll",
+        "lib/netstandard1.1/LinqStatistics.pdb",
+        "lib/portable-net45+win8+wpa81+dnx45/LinqStatistics.XML",
+        "lib/portable-net45+win8+wpa81+dnx45/LinqStatistics.dll",
+        "lib/portable-net45+win8+wpa81+dnx45/LinqStatistics.pdb",
+        "linqstatistics.2.3.0.nupkg.sha512",
+        "linqstatistics.nuspec",
+        "src/Bin.cs",
+        "src/BinFactory.cs",
+        "src/EnumerableStats.cs",
+        "src/EnumerableStatsBinCount.cs",
+        "src/EnumerableStatsCountEach.cs",
+        "src/EnumerableStatsCovariance.cs",
+        "src/EnumerableStatsHistogram.cs",
+        "src/EnumerableStatsKurtosis.cs",
+        "src/EnumerableStatsLeastSquares.cs",
+        "src/EnumerableStatsMedian.cs",
+        "src/EnumerableStatsMinMax.cs",
+        "src/EnumerableStatsMode.cs",
+        "src/EnumerableStatsPearson.cs",
+        "src/EnumerableStatsRange.cs",
+        "src/EnumerableStatsRootMeanSquare.cs",
+        "src/EnumerableStatsSkewness.cs",
+        "src/EnumerableStatsStandardDeviation.cs",
+        "src/EnumerableStatsStandardDeviationP.cs",
+        "src/EnumerableStatsVariance.cs",
+        "src/EnumerableStatsVarianceP.cs",
+        "src/GlobalSuppressions.cs",
+        "src/ItemCount.cs",
+        "src/LeastSquares.cs",
+        "src/NaN/AverageNaN.cs",
+        "src/NaN/EnumerableStatsCovariance.cs",
+        "src/NaN/EnumerableStatsKurtosis.cs",
+        "src/NaN/EnumerableStatsLeastSquares.cs",
+        "src/NaN/EnumerableStatsMinMax.cs",
+        "src/NaN/EnumerableStatsPearson.cs",
+        "src/NaN/EnumerableStatsRange.cs",
+        "src/NaN/EnumerableStatsRootMeanSquare.cs",
+        "src/NaN/EnumerableStatsSkewness.cs",
+        "src/NaN/EnumerableStatsStandardDeviation.cs",
+        "src/NaN/EnumerableStatsStandardDeviationP.cs",
+        "src/NaN/EnumerableStatsVariance.cs",
+        "src/NaN/EnumerableStatsVarianceP.cs",
+        "src/Range.cs"
+      ]
+    }
+  },
+  "projectFileDependencyGroups": {
+    "net6.0": [
+      "CommandLineParser >= 2.9.1",
+      "LinqStatistics >= 2.3.0"
+    ]
+  },
+  "packageFolders": {
+    "/home/ubuntu/.nuget/packages/": {}
+  },
+  "project": {
+    "version": "1.0.0",
+    "restore": {
+      "projectUniqueName": "/home/ubuntu/work/babushka/csharp_client/csharp_client.csproj",
+      "projectName": "csharp_client",
+      "projectPath": "/home/ubuntu/work/babushka/csharp_client/csharp_client.csproj",
+      "packagesPath": "/home/ubuntu/.nuget/packages/",
+      "outputPath": "/home/ubuntu/work/babushka/csharp_client/obj/",
+      "projectStyle": "PackageReference",
+      "configFilePaths": [
+        "/home/ubuntu/.nuget/NuGet/NuGet.Config"
+      ],
+      "originalTargetFrameworks": [
+        "net6.0"
+      ],
+      "sources": {
+        "https://api.nuget.org/v3/index.json": {}
+      },
+      "frameworks": {
+        "net6.0": {
+          "targetAlias": "net6.0",
+          "projectReferences": {}
+        }
+      },
+      "warningProperties": {
+        "warnAsError": [
+          "NU1605"
+        ]
+      }
+    },
+    "frameworks": {
+      "net6.0": {
+        "targetAlias": "net6.0",
+        "dependencies": {
+          "CommandLineParser": {
+            "target": "Package",
+            "version": "[2.9.1, )"
+          },
+          "LinqStatistics": {
+            "target": "Package",
+            "version": "[2.3.0, )"
+          }
+        },
+        "imports": [
+          "net461",
+          "net462",
+          "net47",
+          "net471",
+          "net472",
+          "net48"
+        ],
+        "assetTargetFallback": true,
+        "warn": true,
+        "frameworkReferences": {
+          "Microsoft.NETCore.App": {
+            "privateAssets": "all"
+          }
+        },
+        "runtimeIdentifierGraphPath": "/usr/lib/dotnet/sdk/6.0.116/RuntimeIdentifierGraph.json"
+      }
+    }
+  }
+}

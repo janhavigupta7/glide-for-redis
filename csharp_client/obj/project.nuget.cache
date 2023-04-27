@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "ewdMj4pW2OMjt/qhrt2+RA+y1UIqLnx9oFRsFXWPWO8Gd74WpkTr1iPJIK0bNCBgmylqKdAzSwj/AeFcDq4hdQ==",
+  "success": true,
+  "projectFilePath": "/home/ubuntu/work/babushka/csharp_client/csharp_client.csproj",
+  "expectedPackageFiles": [
+    "/home/ubuntu/.nuget/packages/commandlineparser/2.9.1/commandlineparser.2.9.1.nupkg.sha512",
+    "/home/ubuntu/.nuget/packages/linqstatistics/2.3.0/linqstatistics.2.3.0.nupkg.sha512"
+  ],
+  "logs": []
+}
