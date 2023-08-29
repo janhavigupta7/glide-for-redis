@@ -27,9 +27,10 @@ Babushka (temporary name, final name pending) is a collection of open source Red
 -   openssl
 -   libssl-dev
 -   python3
+-   python3-venv
 
 Installation for ubuntu:
-`sudo apt install -y gcc pkg-config protobuf-compiler openssl libssl-dev python3`
+`sudo apt install -y gcc pkg-config protobuf-compiler openssl libssl-dev python3 python3-venv`
 
 ### git submodule
 
