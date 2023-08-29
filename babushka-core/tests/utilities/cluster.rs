@@ -27,6 +27,7 @@ impl ClusterType {
                 host: host.to_string(),
                 port,
                 insecure: true,
+                socket_addr: None,
             }
         } else {
             redis::ConnectionAddr::Tcp(host.to_string(), port)

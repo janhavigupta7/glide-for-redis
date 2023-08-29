@@ -66,6 +66,7 @@ pub(super) fn get_connection_info(
             host: address.host.to_string(),
             port: get_port(address),
             insecure: tls_mode == TlsMode::InsecureTls,
+            socket_addr: None,
         }
     } else {
         redis::ConnectionAddr::Tcp(address.host.to_string(), get_port(address))
