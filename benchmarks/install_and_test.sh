@@ -107,7 +107,7 @@ function resultFileName() {
 
 function Help() {
     echo Running the script without any arguments runs all benchmarks.
-    echo Pass -node, -csharp, -python as arguments in order to run the node, csharp, or python benchmarks accordingly.
+    echo Pass -node, -csharp, -python, -rust as arguments in order to run the node, csharp, python or rust benchmarks accordingly.
     echo Multiple such flags can be passed.
     echo Pass -no-csv to skip analysis of the results.
     echo
