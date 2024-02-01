@@ -44,7 +44,6 @@ utils/clusters/
 utils/tls_crts/
 
 # OSS Review Toolkit (ORT) files
-**/ort*/**
 **/ort_results/**
 
 # java compiled files.
