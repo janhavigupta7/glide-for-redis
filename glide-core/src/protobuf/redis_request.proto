@@ -125,6 +125,7 @@ enum RequestType {
     XGroupDestroy = 81;
     HSetNX = 82;
     SIsMember = 83;
+    ZRemRangeByRank = 84;
 }
 
 message Command {

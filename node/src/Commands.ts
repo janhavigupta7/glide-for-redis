@@ -870,3 +870,18 @@ export function createZpopmax(key: string, count?: number): redis_request.Comman
 export function createEcho(message: string): redis_request.Command {
     return createCommand(RequestType.Echo, [message]);
 }
+
+/**
+ * @internal
+ */
+export function createZremRangeByRank(
+    key: string,
+    start: number,
+    stop: number
+): redis_request.Command {
+    return createCommand(RequestType.ZRemRangeByRank, [
+        key,
+        start.toString(),
+        stop.toString(),
+    ]);
+}
