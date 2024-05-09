@@ -20,7 +20,7 @@ function loadNativeBinding() {
                             nativeBinding = require("@scope/glide-for-redis-linux-x64");
                             break;
                         case MUSL:
-                            nativeBinding = require("@scope/glide-for-redis-linux-musl-x64");
+                            nativeBinding = require("@scope/glide-for-redis-linux-x64-musl");
                             break;
                         default:
                             nativeBinding = require("@scope/glide-for-redis-linux-x64");
@@ -33,7 +33,7 @@ function loadNativeBinding() {
                             nativeBinding = require("@scope/glide-for-redis-linux-arm64");
                             break;
                         case MUSL:
-                            nativeBinding = require("@scope/glide-for-redis-linux-musl-arm64");
+                            nativeBinding = require("@scope/glide-for-redis-linux-arm64-musl");
                             break;
                         default:
                             nativeBinding = require("@scope/glide-for-redis-linux-arm64");

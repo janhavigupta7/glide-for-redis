@@ -218,7 +218,7 @@ jobs:
           - name: Install dependencies
             run: |
               apk update
-              apk add bash git envsubst sed
+              apk add bash git sed python3
 
           - name: Set up access
             run: |
@@ -245,8 +245,8 @@ jobs:
                 arch: arm64
                 target: aarch64-unknown-linux-musl
                 github-token: ${{ secrets.GITHUB_TOKEN }}
-                publish: true
                 npm_scope: ${{ vars.NPM_SCOPE }}
+                publish: false
           
           - name: Test compatibility
             shell: bash

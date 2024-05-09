@@ -201,7 +201,7 @@ jobs:
             - name: Install dependencies
               run: |
                 apk update
-                apk add bash envsubst git sed
+                apk add bash git sed
             
             - name: Checkout repository for x64
               if: ${{ matrix.build.ARCH == 'x64' }}
