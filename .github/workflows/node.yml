@@ -177,4 +177,85 @@ jobs:
 
             - name: Test compatibility
               run: npm test -- -t "set and get flow works"
-              working-directory: ./node
+              working-directory: ./node                   
+
+    start-self-hosted-runner:
+        if: github.repository_owner == 'aws'
+        runs-on: ubuntu-latest
+        steps:
+          - name: Checkout
+            uses: actions/checkout@v4
+
+          - name: Start self hosted EC2 runner
+            uses: ./.github/workflows/start-self-hosted-runner
+            with:
+                aws-access-key-id: ${{ secrets.AWS_EC2_ACCESS_KEY_ID }}
+                aws-secret-access-key: ${{ secrets.AWS_EC2_SECRET_ACCESS_KEY }}
+                aws-region: ${{ secrets.AWS_REGION }}
+                ec2-instance-id: ${{ secrets.AWS_EC2_INSTANCE_ID }}
+
+    checkout-self-hosted-runner:
+      if: github.repository_owner == 'aws'
+      runs-on: [self-hosted, Linux, ARM64]
+      needs: start-self-hosted-runner
+      steps:
+        - name: Setup self-hosted runner access
+          run: sudo chown -R $USER:$USER /home/ubuntu/actions-runner/_work/glide-for-redis
+        - name: Checkout
+          uses: actions/checkout@v4
+      
+    build-and-test-linux-musl-latest:
+        if: github.repository_owner == 'aws'
+        needs: [start-self-hosted-runner, checkout-self-hosted-runner]
+        name: Build and test Node wrapper on Linux musl
+        runs-on: [self-hosted, Linux, ARM64]
+        container:
+            image: node:alpine
+            options: --user root --privileged
+        strategy:
+            fail-fast: false
+        steps:
+          - name: Install dependencies
+            run: |
+              apk update
+              apk add bash git envsubst sed
+
+          - name: Set up access
+            run: |
+              chown -R $(whoami):$(whoami) $GITHUB_WORKSPACE
+
+          - name: Checkout repository for ARM64
+            shell: bash
+            run: |
+                git config --global --add safe.directory $GITHUB_WORKSPACE
+                git clean -xdf
+                git reset --hard
+                git submodule sync
+                git submodule update --init --recursive
+
+          - name: Downgrade npm major version to 8
+            run: |
+                npm i -g npm@8
+
+          - name: Build Node wrapper
+            uses: ./.github/workflows/build-node-wrapper
+            with:
+                os: ubuntu
+                named_os: linux
+                arch: arm64
+                target: aarch64-unknown-linux-musl
+                github-token: ${{ secrets.GITHUB_TOKEN }}
+                publish: true
+                npm_scope: ${{ vars.NPM_SCOPE }}
+          
+          - name: Test compatibility
+            shell: bash
+            run: npm test -- -t "set and get flow works"
+            working-directory: ./node
+
+          - name: Reset repository
+            shell: bash
+            run: |
+                git reset --hard
+                git clean -xdf
+              
