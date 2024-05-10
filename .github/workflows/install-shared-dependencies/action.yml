@@ -27,7 +27,6 @@ inputs:
         type: string
 
 
-
 runs:
     using: "composite"
     steps:
@@ -41,14 +40,14 @@ runs:
 
         - name: Install software dependencies for Ubuntu GNU
           shell: bash
-          if: "${{ inputs.os == 'ubuntu' && inputs.target != 'x86_64-unknown-linux-musl' && inputs.target != 'aarch64-unknown-linux-musl'}}"
+          if: "${{ inputs.os == 'ubuntu' && !contains(inputs.target, 'musl')}}"
           run: |
               sudo apt update -y
               sudo apt install -y git gcc pkg-config openssl libssl-dev
           
         - name: Install software dependencies for Ubuntu MUSL
           shell: bash
-          if: "${{ inputs.target == 'x86_64-unknown-linux-musl' || inputs.target == 'aarch64-unknown-linux-musl'}}"
+          if: "${{ contains(inputs.target, 'musl') }}"
           run: |
               apk update
               wget -O - https://sh.rustup.rs | sh -s -- -y
@@ -61,9 +60,15 @@ runs:
           run: |
               yum install -y gcc pkgconfig openssl openssl-devel which curl redis6 gettext --allowerasing
 
-        - name: Install Rust toolchain and protoc
-          if: "${{ inputs.target != 'x86_64-unknown-linux-musl' && inputs.target != 'aarch64-unknown-linux-musl' }}"
-          uses: ./.github/workflows/install-rust-and-protoc
+        - name: Install Rust toolchain
+          if: "${{ !contains(inputs.target, 'musl') }}"
+          uses: dtolnay/rust-toolchain@stable
           with:
-            target: ${{ inputs.target }}
-            github-token: ${{ inputs.github-token }}
+              targets: ${{ inputs.target }}
+
+        - name: Install protoc (protobuf)
+          if: "${{ !contains(inputs.target, 'musl') }}"
+          uses: arduino/setup-protoc@v3
+          with:
+              version: "25.1"
+              repo-token: ${{ inputs.github-token }}

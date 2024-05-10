@@ -233,10 +233,6 @@ jobs:
                 git submodule sync
                 git submodule update --init --recursive
 
-          - name: Downgrade npm major version to 8
-            run: |
-                npm i -g npm@8
-
           - name: Build Node wrapper
             uses: ./.github/workflows/build-node-wrapper
             with:
@@ -254,6 +250,7 @@ jobs:
             working-directory: ./node
 
           - name: Reset repository
+            if: always()
             shell: bash
             run: |
                 git reset --hard

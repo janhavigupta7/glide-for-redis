@@ -299,7 +299,7 @@ jobs:
                   if-no-files-found: error
                       
             - name: Reset repository
-              if: ${{ matrix.build.ARCH == 'arm64' }}
+              if: always() && ${{ matrix.build.ARCH == 'arm64' }}
               shell: bash
               run: |
                 git reset --hard
