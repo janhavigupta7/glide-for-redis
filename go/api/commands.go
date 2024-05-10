@@ -49,4 +49,14 @@ type StringCommands interface {
 	//
 	// [redis.io]: https://redis.io/commands/set/
 	Get(key string) (string, error)
+
+	MSet(keyValueMap map[string]string) (string, error)
+
+	MGet(keys []string) ([]string, error)
+}
+
+type GenericBaseCommands interface {
+	Del(keys []string) (int64, error)
+
+	Exists(keys []string) (int64, error)
 }

@@ -5,7 +5,7 @@ package api
 // #cgo LDFLAGS: -L../target/release -lglide_rs
 // #include "../lib.h"
 //
-// void successCallback(void *channelPtr, char *message);
+// void successCallback(void *channelPtr, struct CommandResponse *message);
 // void failureCallback(void *channelPtr, char *errMessage, RequestErrorType errType);
 import "C"
 
@@ -19,6 +19,7 @@ import (
 // BaseClient defines an interface for methods common to both [RedisClient] and [RedisClusterClient].
 type BaseClient interface {
 	StringCommands
+	GenericBaseCommands
 
 	// Close terminates the client by closing all associated resources.
 	Close()
@@ -27,14 +28,15 @@ type BaseClient interface {
 const OK = "OK"
 
 type payload struct {
-	value string
+	value *C.struct_CommandResponse
 	error error
 }
 
 //export successCallback
-func successCallback(channelPtr unsafe.Pointer, cResponse *C.char) {
+func successCallback(channelPtr unsafe.Pointer, cResponse *C.struct_CommandResponse) {
 	// TODO: call lib.rs function to free response
-	response := C.GoString(cResponse)
+	response := cResponse
+	// defer C.free_command_response(response)
 	resultChannel := *(*chan payload)(channelPtr)
 	resultChannel <- payload{value: response, error: nil}
 }
@@ -43,7 +45,7 @@ func successCallback(channelPtr unsafe.Pointer, cResponse *C.char) {
 func failureCallback(channelPtr unsafe.Pointer, cErrorMessage *C.char, cErrorType C.RequestErrorType) {
 	// TODO: call lib.rs function to free response
 	resultChannel := *(*chan payload)(channelPtr)
-	resultChannel <- payload{value: "", error: goError(cErrorType, cErrorMessage)}
+	resultChannel <- payload{value: nil, error: goError(cErrorType, cErrorMessage)}
 }
 
 type clientConfiguration interface {
@@ -92,7 +94,7 @@ func (client *baseClient) Close() {
 	client.coreClient = nil
 }
 
-func (client *baseClient) executeCommand(requestType C.RequestType, args []string) (interface{}, error) {
+func (client *baseClient) executeCommand(requestType C.RequestType, args []string) (*C.struct_CommandResponse, error) {
 	if client.coreClient == nil {
 		return nil, &ClosingError{"The client is closed."}
 	}
@@ -104,12 +106,10 @@ func (client *baseClient) executeCommand(requestType C.RequestType, args []strin
 	resultChannelPtr := uintptr(unsafe.Pointer(&resultChannel))
 
 	C.command(client.coreClient, C.uintptr_t(resultChannelPtr), requestType, C.uintptr_t(len(args)), &cArgs[0])
-
 	payload := <-resultChannel
 	if payload.error != nil {
 		return nil, payload.error
 	}
-
 	return payload.value, nil
 }
 
@@ -144,6 +144,18 @@ func (client *baseClient) Set(key string, value string) (string, error) {
 	}
 
 	return handleStringResponse(result)
+}
+
+func (client *baseClient) SetAsync(key string, value string) <-chan string {
+	r := make(chan string)
+
+	go func() {
+		defer close(r)
+		res, _ := client.Set(key, value)
+		r <- res
+	}()
+
+	return r
 }
 
 // SetWithOptions sets the given key with the given value using the given options. The return value is dependent on the passed
@@ -189,4 +201,44 @@ func (client *baseClient) Get(key string) (string, error) {
 	}
 
 	return handleStringResponse(result)
+}
+
+func (client *baseClient) Del(keys []string) (int64, error) {
+	result, err := client.executeCommand(C.Del, keys)
+	if err != nil {
+		return 0, err
+	}
+
+	return handleLongResponse(result)
+}
+
+func (client *baseClient) Exists(keys []string) (int64, error) {
+	result, err := client.executeCommand(C.Exists, keys)
+	if err != nil {
+		return 0, err
+	}
+	return handleLongResponse(result)
+}
+
+func (client *baseClient) MSet(keyValueMap map[string]string) (string, error) {
+	flat := []string{}
+	for key, value := range keyValueMap {
+		flat = append(flat, key)
+		flat = append(flat, value)
+	}
+	result, err := client.executeCommand(C.MSet, flat)
+	if err != nil {
+		return "", err
+	}
+
+	return handleStringResponse(result)
+}
+
+func (client *baseClient) MGet(keys []string) ([]string, error) {
+	result, err := client.executeCommand(C.MGet, keys)
+	if err != nil {
+		return []string{}, err
+	}
+
+	return handleStringArrayResponse(result)
 }

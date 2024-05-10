@@ -14,10 +14,18 @@ use protobuf::Message;
 use redis::{cmd, Cmd, FromRedisValue, RedisResult, Value};
 use std::{
     ffi::{c_void, CStr, CString},
-    os::raw::c_char,
+    mem,
+    os::raw::{c_char, c_long},
 };
 use tokio::runtime::Builder;
 use tokio::runtime::Runtime;
+
+#[repr(C)]
+pub struct CommandResponse {
+    int_value: c_long,
+    string_value: *const c_char,
+    array_value: *mut *mut c_char,
+}
 
 /// Success callback that is called when a Redis command succeeds.
 ///
@@ -27,7 +35,8 @@ use tokio::runtime::Runtime;
 /// `message` is the value returned by the Redis command. The 'message' is managed by Rust and is freed when the callback returns control back to the caller.
 // TODO: Change message type when implementing command logic
 // TODO: Consider using a single response callback instead of success and failure callbacks
-pub type SuccessCallback = unsafe extern "C" fn(index_ptr: usize, message: *const c_char) -> ();
+pub type SuccessCallback =
+    unsafe extern "C" fn(index_ptr: usize, message: *const CommandResponse) -> ();
 
 /// Failure callback that is called when a Redis command fails.
 ///
@@ -176,6 +185,46 @@ pub unsafe extern "C" fn free_connection_response(
     drop(connection_response);
     if !connection_error_message.is_null() {
         drop(unsafe { CString::from_raw(connection_error_message as *mut c_char) });
+    }
+}
+
+/// Deallocates a `CommandResponse`.
+///
+/// This function also frees the contained string_value and array_value. If the string_value and array_value are null pointers, the function returns and only the `CommandResponse` is freed.
+///
+/// # Panics
+///
+/// This function panics when called with a null `CommandResponse` pointer.
+///
+/// # Safety
+///
+/// * `free_command_response` can only be called once per `CommandResponse`. Calling it twice is undefined behavior, since the address will be freed twice.
+/// * `command_response_ptr` must be obtained from the `CommandResponse` returned in [`success_callback`] from [`command`].
+/// * `command_response_ptr` must be valid until `free_command_response` is called.
+/// * The contained `string_value` must be obtained from the `CommandResponse` returned in [`success_callback`] from [`command`].
+/// * The contained `string_value` must be valid until `free_command_response` is called and it must outlive the `CommandResponse` that contains it.
+/// * The contained `array_value` must be obtained from the `CommandResponse` returned in [`success_callback`] from [`command`].
+/// * The contained `array_value` must be valid until `free_command_response` is called and it must outlive the `CommandResponse` that contains it.
+#[no_mangle]
+pub unsafe extern "C" fn free_command_response(command_response_ptr: *mut CommandResponse) {
+    assert!(!command_response_ptr.is_null());
+    let command_response = unsafe { Box::from_raw(command_response_ptr) };
+    let int_value = command_response.int_value;
+    let string_value = command_response.string_value;
+    let array_value = command_response.array_value;
+    drop(command_response);
+    if !string_value.is_null() {
+        drop(unsafe { CString::from_raw(string_value as *mut c_char) });
+    }
+    if !array_value.is_null() {
+        let len = int_value as usize;
+        let v = Vec::from_raw_parts(array_value, len, len);
+        for elem in v {
+            if !elem.is_null() {
+                let s = CString::from_raw(elem);
+                mem::drop(s);
+            }
+        }
     }
 }
 
@@ -427,16 +476,75 @@ pub unsafe extern "C" fn command(
 
         //print!(" === val {:?}\n", value.clone());
 
-        let result: RedisResult<Option<CString>> = match value {
+        let result: RedisResult<Option<CommandResponse>> = match value {
             Value::Nil => Ok(None),
-            Value::Int(num) => Ok(Some(CString::new(format!("{}", num)).unwrap())),
+            Value::Int(num) => Ok(Some(CommandResponse {
+                int_value: num,
+                string_value: std::ptr::null(),
+                array_value: std::ptr::null_mut(),
+            })),
             Value::SimpleString(_) | Value::BulkString(_) => {
-                Option::<CString>::from_owned_redis_value(value)
+                let val = CString::into_raw(<CString>::from_owned_redis_value(value).unwrap());
+                Ok(Some(CommandResponse {
+                    int_value: 0,
+                    string_value: val,
+                    array_value: std::ptr::null_mut(),
+                }))
             }
-            Value::VerbatimString { format: _, text } => Ok(Some(CString::new(text).unwrap())),
-            Value::Okay => Ok(Some(CString::new("OK").unwrap())),
-            Value::Double(num) => Ok(Some(CString::new(format!("{}", num)).unwrap())),
-            Value::Boolean(bool) => Ok(Some(CString::new(format!("{}", bool)).unwrap())),
+            Value::VerbatimString { format: _, text } => {
+                let val = CString::into_raw(CString::new(text).unwrap());
+                Ok(Some(CommandResponse {
+                    int_value: 0,
+                    string_value: val,
+                    array_value: std::ptr::null_mut(),
+                }))
+            }
+            Value::Okay => {
+                let val = CString::into_raw(CString::new("OK").unwrap());
+                Ok(Some(CommandResponse {
+                    int_value: 0,
+                    string_value: val,
+                    array_value: std::ptr::null_mut(),
+                }))
+            }
+            Value::Double(num) => {
+                let val = CString::into_raw(CString::new(format!("{}", num)).unwrap());
+                Ok(Some(CommandResponse {
+                    int_value: 0,
+                    string_value: val,
+                    array_value: std::ptr::null_mut(),
+                }))
+            }
+            Value::Boolean(bool) => {
+                let val = CString::into_raw(CString::new(format!("{}", bool)).unwrap());
+                Ok(Some(CommandResponse {
+                    int_value: 0,
+                    string_value: val,
+                    array_value: std::ptr::null_mut(),
+                }))
+            }
+            Value::Array(array) => {
+                let mut arr = array
+                    .iter()
+                    .map(|x| {
+                        if *x == Value::Nil {
+                            std::ptr::null_mut()
+                        } else {
+                            CString::into_raw(<CString>::from_owned_redis_value(x.clone()).unwrap())
+                                as *mut c_char
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                arr.shrink_to_fit();
+                let val = arr.as_mut_ptr();
+                let len = arr.len() as c_long;
+                std::mem::forget(arr);
+                Ok(Some(CommandResponse {
+                    int_value: len,
+                    string_value: std::ptr::null(),
+                    array_value: val,
+                }))
+            }
             _ => todo!(),
         };
 
@@ -445,7 +553,9 @@ pub unsafe extern "C" fn command(
         unsafe {
             match result {
                 Ok(None) => (client_adapter.success_callback)(channel, std::ptr::null()),
-                Ok(Some(c_str)) => (client_adapter.success_callback)(channel, c_str.as_ptr()),
+                Ok(Some(message)) => {
+                    (client_adapter.success_callback)(channel, Box::into_raw(Box::new(message)))
+                }
                 Err(err) => {
                     let message = errors::error_message(&err);
                     let error_type = errors::error_type(&err);
