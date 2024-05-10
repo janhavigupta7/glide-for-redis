@@ -27,7 +27,7 @@ func main() {
 	}
 	fmt.Println("PING:", res)
 
-	res, err = client.Set("apples", "oranges")
+	res = <-client.SetAsync("apples", "oranges")
 	if err != nil {
 		log.Fatal("Glide example failed with an error: ", err)
 	}
@@ -38,6 +38,33 @@ func main() {
 		log.Fatal("Glide example failed with an error: ", err)
 	}
 	fmt.Println("GET(apples):", res)
+	resint, err := client.Del([]string{"apples"})
+	if err != nil {
+		log.Fatal("Glide example failed with an error: ", err)
+	}
+
+	fmt.Println("Del(apples):", resint)
+	res, err = client.MSet(map[string]string{
+		"foo": "Dog",
+		"bar": "Cat",
+	})
+	if err != nil {
+		log.Fatal("Glide example failed with an error: ", err)
+	}
+	fmt.Println("MSet(foo:Dog, bar:Cat):", res)
+
+	resarray, err := client.MGet([]string{"apples", "foo", "bar"})
+	if err != nil {
+		log.Fatal("Glide example failed with an error: ", err)
+	}
+	fmt.Println("MGet(apples, foo, bar):", resarray)
+
+	resint, err = client.Exists([]string{"apples", "foo", "bar"})
+	if err != nil {
+		log.Fatal("Glide example failed with an error: ", err)
+	}
+
+	fmt.Println("Exists(apples, foo, bar):", resint)
 
 	client.Close()
 }
