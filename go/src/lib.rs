@@ -15,7 +15,7 @@ use redis::{cmd, Cmd, FromRedisValue, RedisResult, Value};
 use std::{
     ffi::{c_void, CStr, CString},
     mem,
-    os::raw::{c_char, c_long},
+    os::raw::{c_char, c_long, c_double},
 };
 use tokio::runtime::Builder;
 use tokio::runtime::Runtime;
@@ -23,7 +23,9 @@ use tokio::runtime::Runtime;
 #[repr(C)]
 pub struct CommandResponse {
     int_value: c_long,
-    string_value: *const c_char,
+    float_value: c_double,
+    string_value: *mut c_char,
+    int_array_value: *mut c_long,
     array_value: *mut *mut c_char,
 }
 
@@ -203,6 +205,8 @@ pub unsafe extern "C" fn free_connection_response(
 /// * `command_response_ptr` must be valid until `free_command_response` is called.
 /// * The contained `string_value` must be obtained from the `CommandResponse` returned in [`success_callback`] from [`command`].
 /// * The contained `string_value` must be valid until `free_command_response` is called and it must outlive the `CommandResponse` that contains it.
+/// * The contained `int_array_value` must be obtained from the `CommandResponse` returned in [`success_callback`] from [`command`].
+/// * The contained `int_array_value` must be valid until `free_command_response` is called and it must outlive the `CommandResponse` that contains it.
 /// * The contained `array_value` must be obtained from the `CommandResponse` returned in [`success_callback`] from [`command`].
 /// * The contained `array_value` must be valid until `free_command_response` is called and it must outlive the `CommandResponse` that contains it.
 #[no_mangle]
@@ -211,10 +215,16 @@ pub unsafe extern "C" fn free_command_response(command_response_ptr: *mut Comman
     let command_response = unsafe { Box::from_raw(command_response_ptr) };
     let int_value = command_response.int_value;
     let string_value = command_response.string_value;
+    let int_array_value = command_response.int_array_value;
     let array_value = command_response.array_value;
     drop(command_response);
     if !string_value.is_null() {
-        drop(unsafe { CString::from_raw(string_value as *mut c_char) });
+        let len = int_value as usize;
+        Vec::from_raw_parts(string_value, len, len);
+    }
+    if !int_array_value.is_null() {
+        let len = int_value as usize;
+        Vec::from_raw_parts(int_array_value, len, len);
     }
     if !array_value.is_null() {
         let len = int_value as usize;
@@ -316,6 +326,40 @@ pub enum RequestType {
     XTrim = 79,
     XGroupCreate = 80,
     XGroupDestroy = 81,
+    HSetNX = 82,
+    SIsMember = 83,
+    HVals = 84,
+    PTTL = 85,
+    ZRemRangeByRank = 86,
+    Persist = 87,
+    ZRemRangeByScore = 88,
+    Time = 89,
+    ZRank = 90,
+    Rename = 91,
+    DBSize = 92,
+    BRPop = 93,
+    HKeys = 94,
+    SPop = 95,
+    PfAdd = 96,
+    PfCount = 97,
+    PfMerge = 98,
+    BLPop = 100,
+    LInsert = 101,
+    RPushX = 102,
+    LPushX = 103,
+    ZMScore = 104,
+    ZDiff = 105,
+    ZDiffStore = 106,
+    SetRange = 107,
+    ZRemRangeByLex = 108,
+    ZLexCount = 109,
+    Append = 110,
+    SUnionStore = 111,
+    SDiffStore = 112,
+    SInter = 113,
+    SInterStore = 114,
+    ZRangeStore = 115,
+    GetRange = 116,
 }
 
 // copied from glide_core::socket_listener::get_command
@@ -403,6 +447,40 @@ fn get_command(request_type: RequestType) -> Option<Cmd> {
         RequestType::XGroupCreate => Some(get_two_word_command("XGROUP", "CREATE")),
         RequestType::XGroupDestroy => Some(get_two_word_command("XGROUP", "DESTROY")),
         RequestType::XTrim => Some(cmd("XTRIM")),
+        RequestType::HSetNX => Some(cmd("HSETNX")),
+        RequestType::SIsMember => Some(cmd("SISMEMBER")),
+        RequestType::HVals => Some(cmd("HVALS")),
+        RequestType::PTTL => Some(cmd("PTTL")),
+        RequestType::ZRemRangeByRank => Some(cmd("ZREMRANGEBYRANK")),
+        RequestType::Persist => Some(cmd("PERSIST")),
+        RequestType::ZRemRangeByScore => Some(cmd("ZREMRANGEBYSCORE")),
+        RequestType::Time => Some(cmd("TIME")),
+        RequestType::ZRank => Some(cmd("ZRANK")),
+        RequestType::Rename => Some(cmd("RENAME")),
+        RequestType::DBSize => Some(cmd("DBSIZE")),
+        RequestType::BRPop => Some(cmd("BRPOP")),
+        RequestType::HKeys => Some(cmd("HKEYS")),
+        RequestType::SPop => Some(cmd("SPOP")),
+        RequestType::PfAdd => Some(cmd("PFADD")),
+        RequestType::PfCount => Some(cmd("PFCOUNT")),
+        RequestType::PfMerge => Some(cmd("PFMERGE")),
+        RequestType::RPushX => Some(cmd("RPUSHX")),
+        RequestType::LPushX => Some(cmd("LPUSHX")),
+        RequestType::BLPop => Some(cmd("BLPOP")),
+        RequestType::LInsert => Some(cmd("LINSERT")),
+        RequestType::ZMScore => Some(cmd("ZMSCORE")),
+        RequestType::ZDiff => Some(cmd("ZDIFF")),
+        RequestType::ZDiffStore => Some(cmd("ZDIFFSTORE")),
+        RequestType::SetRange => Some(cmd("SETRANGE")),
+        RequestType::ZRemRangeByLex => Some(cmd("ZREMRANGEBYLEX")),
+        RequestType::ZLexCount => Some(cmd("ZLEXCOUNT")),
+        RequestType::Append => Some(cmd("APPEND")),
+        RequestType::SUnionStore => Some(cmd("SUNIONSTORE")),
+        RequestType::SDiffStore => Some(cmd("SDIFFSTORE")),
+        RequestType::SInter => Some(cmd("SINTER")),
+        RequestType::SInterStore => Some(cmd("SINTERSTORE")),
+        RequestType::ZRangeStore => Some(cmd("ZRANGESTORE")),
+        RequestType::GetRange => Some(cmd("GETRANGE")),
     }
 }
 
@@ -480,38 +558,73 @@ pub unsafe extern "C" fn command(
             Value::Nil => Ok(None),
             Value::Int(num) => Ok(Some(CommandResponse {
                 int_value: num,
-                string_value: std::ptr::null(),
+                float_value: 0.0,
+                string_value: std::ptr::null_mut(),
+                int_array_value: std::ptr::null_mut(),
                 array_value: std::ptr::null_mut(),
             })),
-            Value::SimpleString(_) | Value::BulkString(_) => {
-                let val = CString::into_raw(<CString>::from_owned_redis_value(value).unwrap());
+            Value::SimpleString(text) => {
+                let mut arr = text.chars().map(|b| b as c_char).collect::<Vec<_>>();
+                arr.shrink_to_fit();
+                let val = arr.as_mut_ptr();
+                let len = arr.len() as c_long;
+                std::mem::forget(arr);
                 Ok(Some(CommandResponse {
-                    int_value: 0,
+                    int_value: len,
+                    float_value: 0.0,
                     string_value: val,
+                    int_array_value: std::ptr::null_mut(),
+                    array_value: std::ptr::null_mut(),
+                }))
+            }
+            Value::BulkString(text) => {
+                let mut arr = text.iter().map(|b| *b as c_char).collect::<Vec<_>>();
+                arr.shrink_to_fit();
+                let val = arr.as_mut_ptr();
+                let len = arr.len() as c_long;
+                std::mem::forget(arr);
+                Ok(Some(CommandResponse {
+                    int_value: len,
+                    float_value: 0.0,
+                    string_value: val,
+                    int_array_value: std::ptr::null_mut(),
                     array_value: std::ptr::null_mut(),
                 }))
             }
             Value::VerbatimString { format: _, text } => {
-                let val = CString::into_raw(CString::new(text).unwrap());
+                let mut arr = text.chars().map(|b| b as c_char).collect::<Vec<_>>();
+                arr.shrink_to_fit();
+                let val = arr.as_mut_ptr();
+                let len = arr.len() as c_long;
+                std::mem::forget(arr);
                 Ok(Some(CommandResponse {
-                    int_value: 0,
+                    int_value: len,
+                    float_value: 0.0,
                     string_value: val,
+                    int_array_value: std::ptr::null_mut(),
                     array_value: std::ptr::null_mut(),
                 }))
             }
             Value::Okay => {
-                let val = CString::into_raw(CString::new("OK").unwrap());
+                let mut arr = "OK".chars().map(|b| b as c_char).collect::<Vec<_>>();
+                arr.shrink_to_fit();
+                let val = arr.as_mut_ptr();
+                let len = arr.len() as c_long;
+                std::mem::forget(arr);
                 Ok(Some(CommandResponse {
-                    int_value: 0,
+                    int_value: len,
+                    float_value: 0.0,
                     string_value: val,
+                    int_array_value: std::ptr::null_mut(),
                     array_value: std::ptr::null_mut(),
                 }))
             }
             Value::Double(num) => {
-                let val = CString::into_raw(CString::new(format!("{}", num)).unwrap());
                 Ok(Some(CommandResponse {
                     int_value: 0,
-                    string_value: val,
+                    float_value: num,
+                    string_value: std::ptr::null_mut(),
+                    int_array_value: std::ptr::null_mut(),
                     array_value: std::ptr::null_mut(),
                 }))
             }
@@ -519,19 +632,27 @@ pub unsafe extern "C" fn command(
                 let val = CString::into_raw(CString::new(format!("{}", bool)).unwrap());
                 Ok(Some(CommandResponse {
                     int_value: 0,
+                    float_value: 0.0,
                     string_value: val,
+                    int_array_value: std::ptr::null_mut(),
                     array_value: std::ptr::null_mut(),
                 }))
             }
             Value::Array(array) => {
+                let mut vlen: Vec<c_long> = Vec::new();
                 let mut arr = array
                     .iter()
                     .map(|x| {
                         if *x == Value::Nil {
-                            std::ptr::null_mut()
+                            vlen.push(0);
+                            return std::ptr::null_mut();
                         } else {
-                            CString::into_raw(<CString>::from_owned_redis_value(x.clone()).unwrap())
-                                as *mut c_char
+                            let mut res = <String>::from_owned_redis_value(x.clone()).unwrap().chars().map(|b| b as c_char).collect::<Vec<_>>();
+                            res.shrink_to_fit();
+                            let res_ptr = res.as_mut_ptr();
+                            vlen.push(res.len() as c_long);
+                            std::mem::forget(res);
+                            return res_ptr;   
                         }
                     })
                     .collect::<Vec<_>>();
@@ -539,9 +660,14 @@ pub unsafe extern "C" fn command(
                 let val = arr.as_mut_ptr();
                 let len = arr.len() as c_long;
                 std::mem::forget(arr);
+                vlen.shrink_to_fit();
+                let int_val = vlen.as_mut_ptr();
+                std::mem::forget(vlen);
                 Ok(Some(CommandResponse {
                     int_value: len,
-                    string_value: std::ptr::null(),
+                    float_value: 0.0,
+                    string_value: std::ptr::null_mut(),
+                    int_array_value: int_val,
                     array_value: val,
                 }))
             }

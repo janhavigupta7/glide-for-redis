@@ -10,6 +10,7 @@ package api
 import "C"
 
 import (
+	"strconv"
 	"unsafe"
 
 	"github.com/aws/glide-for-redis/go/glide/protobuf"
@@ -20,6 +21,7 @@ import (
 type BaseClient interface {
 	StringCommands
 	GenericBaseCommands
+	ListBaseCommands
 
 	// Close terminates the client by closing all associated resources.
 	Close()
@@ -32,11 +34,15 @@ type payload struct {
 	error error
 }
 
+type StringResponse struct {
+	result string
+	error  error
+}
+
 //export successCallback
 func successCallback(channelPtr unsafe.Pointer, cResponse *C.struct_CommandResponse) {
 	// TODO: call lib.rs function to free response
 	response := cResponse
-	// defer C.free_command_response(response)
 	resultChannel := *(*chan payload)(channelPtr)
 	resultChannel <- payload{value: response, error: nil}
 }
@@ -128,31 +134,18 @@ func freeCStrings(cArgs []*C.char) {
 	}
 }
 
-// Set the given key with the given value. The return value is a response from Redis containing the string "OK".
-//
-// See [redis.io] for details.
-//
-// For example:
-//
-//	result := client.Set("key", "value")
-//
-// [redis.io]: https://redis.io/commands/set/
-func (client *baseClient) Set(key string, value string) (string, error) {
-	result, err := client.executeCommand(C.SetString, []string{key, value})
-	if err != nil {
-		return "", err
-	}
-
-	return handleStringResponse(result)
-}
-
-func (client *baseClient) SetAsync(key string, value string) <-chan string {
-	r := make(chan string)
+func (client *baseClient) Set(key string, value string) <-chan StringResponse {
+	r := make(chan StringResponse)
 
 	go func() {
 		defer close(r)
-		res, _ := client.Set(key, value)
-		r <- res
+		res, err := client.executeCommand(C.SetString, []string{key, value})
+		if err != nil {
+			r <- StringResponse{result: "", error: err}
+		} else {
+			str, err := handleStringResponse(res)
+			r <- StringResponse{result: str, error: err}
+		}
 	}()
 
 	return r
@@ -200,7 +193,7 @@ func (client *baseClient) Get(key string) (string, error) {
 		return "", err
 	}
 
-	return handleStringResponse(result)
+	return handleStringOrNullResponse(result)
 }
 
 func (client *baseClient) Del(keys []string) (int64, error) {
@@ -241,4 +234,199 @@ func (client *baseClient) MGet(keys []string) ([]string, error) {
 	}
 
 	return handleStringArrayResponse(result)
+}
+
+func (client *baseClient) Incr(key string) (int64, error) {
+	result, err := client.executeCommand(C.Incr, []string{key})
+	if err != nil {
+		return 0, err
+	}
+
+	return handleLongResponse(result)
+}
+
+func (client *baseClient) IncrBy(key string, amount int64) (int64, error) {
+	result, err := client.executeCommand(C.IncrBy, []string{key, strconv.FormatInt(amount, 10)})
+	if err != nil {
+		return 0, err
+	}
+
+	return handleLongResponse(result)
+}
+
+func (client *baseClient) IncrByFloat(key string, amount float64) (float64, error) {
+	result, err := client.executeCommand(C.IncrByFloat, []string{key, strconv.FormatFloat(amount, 'f', -1, 64)})
+	if err != nil {
+		return 0, err
+	}
+
+	return handleDoubleResponse(result)
+}
+
+func (client *baseClient) Decr(key string) (int64, error) {
+	result, err := client.executeCommand(C.Decr, []string{key})
+	if err != nil {
+		return 0, err
+	}
+
+	return handleLongResponse(result)
+}
+
+func (client *baseClient) DecrBy(key string, amount int64) (int64, error) {
+	result, err := client.executeCommand(C.DecrBy, []string{key, strconv.FormatInt(amount, 10)})
+	if err != nil {
+		return 0, err
+	}
+
+	return handleLongResponse(result)
+}
+
+func (client *baseClient) Strlen(key string) (int64, error) {
+	result, err := client.executeCommand(C.Strlen, []string{key})
+	if err != nil {
+		return 0, err
+	}
+
+	return handleLongResponse(result)
+}
+
+func (client *baseClient) SetRange(key string, offset int, value string) (int64, error) {
+	result, err := client.executeCommand(C.SetRange, []string{key, strconv.Itoa(offset), value})
+	if err != nil {
+		return 0, err
+	}
+
+	return handleLongResponse(result)
+}
+
+func (client *baseClient) GetRange(key string, start int, end int) (string, error) {
+	result, err := client.executeCommand(C.GetRange, []string{key, strconv.Itoa(start), strconv.Itoa(end)})
+	if err != nil {
+		return "", err
+	}
+
+	return handleStringResponse(result)
+}
+
+func (client *baseClient) LPush(key string, elements []string) (int64, error) {
+	result, err := client.executeCommand(C.LPush, append([]string{key}, elements...))
+	if err != nil {
+		return 0, err
+	}
+
+	return handleLongResponse(result)
+}
+
+func (client *baseClient) LPop(key string) (string, error) {
+	result, err := client.executeCommand(C.LPop, []string{key})
+	if err != nil {
+		return "", err
+	}
+
+	return handleStringOrNullResponse(result)
+}
+
+func (client *baseClient) LRange(key string, start int64, end int64) ([]string, error) {
+	result, err := client.executeCommand(C.LRange, []string{key, strconv.FormatInt(start, 10), strconv.FormatInt(end, 10)})
+	if err != nil {
+		return []string{}, err
+	}
+
+	return handleStringArrayOrNullResponse(result)
+}
+
+func (client *baseClient) Lindex(key string, index int64) (string, error) {
+	result, err := client.executeCommand(C.Lindex, []string{key, strconv.FormatInt(index, 10)})
+	if err != nil {
+		return "", err
+	}
+
+	return handleStringOrNullResponse(result)
+}
+
+func (client *baseClient) LTrim(key string, start int64, end int64) (string, error) {
+	result, err := client.executeCommand(C.LTrim, []string{key, strconv.FormatInt(start, 10), strconv.FormatInt(end, 10)})
+	if err != nil {
+		return "", err
+	}
+
+	return handleStringResponse(result)
+}
+
+func (client *baseClient) LLen(key string) (int64, error) {
+	result, err := client.executeCommand(C.LLen, []string{key})
+	if err != nil {
+		return 0, err
+	}
+
+	return handleLongResponse(result)
+}
+
+func (client *baseClient) LRem(key string, count int64, element string) (int64, error) {
+	result, err := client.executeCommand(C.LRem, []string{key, strconv.FormatInt(count, 10), element})
+	if err != nil {
+		return 0, err
+	}
+
+	return handleLongResponse(result)
+}
+
+func (client *baseClient) RPush(key string, elements []string) (int64, error) {
+	result, err := client.executeCommand(C.RPush, append([]string{key}, elements...))
+	if err != nil {
+		return 0, err
+	}
+
+	return handleLongResponse(result)
+}
+
+func (client *baseClient) RPop(key string) (string, error) {
+	result, err := client.executeCommand(C.RPop, []string{key})
+	if err != nil {
+		return "", err
+	}
+
+	return handleStringOrNullResponse(result)
+}
+
+func (client *baseClient) BLPop(keys []string, timeout float64) ([]string, error) {
+	var arg []string
+	arg = append(arg, keys...)
+	arg = append(arg, strconv.FormatFloat(timeout, 'f', -1, 64))
+	result, err := client.executeCommand(C.BLPop, arg)
+	if err != nil {
+		return []string{}, err
+	}
+
+	return handleStringArrayOrNullResponse(result)
+}
+
+func (client *baseClient) BRPop(keys []string, timeout float64) ([]string, error) {
+	var arg []string
+	arg = append(arg, keys...)
+	arg = append(arg, strconv.FormatFloat(timeout, 'f', -1, 64))
+	result, err := client.executeCommand(C.BRPop, arg)
+	if err != nil {
+		return []string{}, err
+	}
+
+	return handleStringArrayOrNullResponse(result)
+}
+
+func (client *baseClient) RPushX(key string, elements []string) (int64, error) {
+	result, err := client.executeCommand(C.RPushX, append([]string{key}, elements...))
+	if err != nil {
+		return 0, err
+	}
+
+	return handleLongResponse(result)
+}
+
+func (client *baseClient) LPushX(key string, elements []string) (int64, error) {
+	result, err := client.executeCommand(C.LPushX, append([]string{key}, elements...))
+	if err != nil {
+		return 0, err
+	}
+
+	return handleLongResponse(result)
 }

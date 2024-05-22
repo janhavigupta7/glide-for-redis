@@ -38,22 +38,66 @@ func handleRedisResponse[T redisResponse](t reflect.Type, isNilable bool, respon
 	}
 }
 
+func convertCharArrayToString(arr *C.char, len C.long) string {
+	var res string = ""
+	for _, v := range unsafe.Slice(arr, len) {
+		if v == 0 {
+			res = res + " "
+		} else {
+			res = res + string(v)
+		}
+	}
+	return res
+}
+
 func handleStringResponse(response *C.struct_CommandResponse) (string, error) {
 	defer C.free_command_response(response)
-	if response == nil {
-		return "", nil
+	var res string = convertCharArrayToString(response.string_value, response.int_value)
+	return handleRedisResponse[string](reflect.TypeOf(""), false, res)
+}
+
+func handleStringOrNullResponse(response *C.struct_CommandResponse) (string, error) {
+	if response != nil {
+		defer C.free_command_response(response)
 	}
-	return handleRedisResponse[string](reflect.TypeOf(""), false, C.GoString(response.string_value))
+	var res string = ""
+	if response != nil {
+		res = convertCharArrayToString(response.string_value, response.int_value)
+	}
+	return handleRedisResponse[string](reflect.TypeOf(""), false, res)
 }
 
 func handleStringArrayResponse(response *C.struct_CommandResponse) ([]string, error) {
 	defer C.free_command_response(response)
+	var len []C.long
+	len = append(len, unsafe.Slice(response.int_array_value, response.int_value)...)
 	var slice []string
-	for _, v := range unsafe.Slice(response.array_value, response.int_value) {
+	for k, v := range unsafe.Slice(response.array_value, response.int_value) {
 		if v == nil {
 			slice = append(slice, "")
 		} else {
-			slice = append(slice, C.GoString(v))
+			var res string = convertCharArrayToString(v, len[k])
+			slice = append(slice, res)
+		}
+	}
+	return handleRedisResponse[[]string](reflect.TypeOf([]string{}), false, slice)
+}
+
+func handleStringArrayOrNullResponse(response *C.struct_CommandResponse) ([]string, error) {
+	if response != nil {
+		defer C.free_command_response(response)
+	}
+	var slice []string
+	if response != nil {
+		var len []C.long
+		len = append(len, unsafe.Slice(response.int_array_value, response.int_value)...)
+		for k, v := range unsafe.Slice(response.array_value, response.int_value) {
+			if v == nil {
+				slice = append(slice, "")
+			} else {
+				var res string = convertCharArrayToString(v, len[k])
+				slice = append(slice, res)
+			}
 		}
 	}
 	return handleRedisResponse[[]string](reflect.TypeOf([]string{}), false, slice)
@@ -63,4 +107,10 @@ func handleLongResponse(response *C.struct_CommandResponse) (int64, error) {
 	defer C.free_command_response(response)
 	var i int64
 	return handleRedisResponse[int64](reflect.TypeOf(i), false, int64(response.int_value))
+}
+
+func handleDoubleResponse(response *C.struct_CommandResponse) (float64, error) {
+	defer C.free_command_response(response)
+	var i float64
+	return handleRedisResponse[float64](reflect.TypeOf(i), false, float64(response.float_value))
 }

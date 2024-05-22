@@ -17,7 +17,7 @@ type StringCommands interface {
 	//	result := client.Set("key", "value")
 	//
 	// [redis.io]: https://redis.io/commands/set/
-	Set(key string, value string) (string, error)
+	Set(key string, value string) <-chan StringResponse
 
 	// SetWithOptions sets the given key with the given value using the given options. The return value is dependent on the
 	// passed options. If the value is successfully set, "OK" is returned. If value isn't set because of [OnlyIfExists] or
@@ -53,10 +53,57 @@ type StringCommands interface {
 	MSet(keyValueMap map[string]string) (string, error)
 
 	MGet(keys []string) ([]string, error)
+
+	Incr(key string) (int64, error)
+
+	IncrBy(key string, amount int64) (int64, error)
+
+	IncrByFloat(key string, amount float64) (float64, error)
+
+	Decr(key string) (int64, error)
+
+	DecrBy(key string, amount int64) (int64, error)
+
+	Strlen(key string) (int64, error)
+
+	SetRange(key string, offset int, value string) (int64, error)
+
+	GetRange(key string, start int64, end int64) (string, error)
 }
 
 type GenericBaseCommands interface {
 	Del(keys []string) (int64, error)
 
 	Exists(keys []string) (int64, error)
+}
+
+// TODO: Test the working of the list commands.
+type ListBaseCommands interface {
+	LPush(key string, elements []string) (int64, error)
+
+	LPop(key string) (string, error)
+
+	LRange(key string, start int64, end int64) ([]string, error)
+
+	Lindex(key string, index int64) (string, error)
+
+	LTrim(key string, start int64, end int64) (string, error)
+
+	LLen(key string) (int64, error)
+
+	LRem(key string, count int64, element string) (int64, error)
+
+	RPush(key string, elements []string) (int64, error)
+
+	RPop(key string) (string, error)
+
+	// TODO: LInsert(key string, position *InsertPosition, pivot string, element string) (int64, error)
+
+	BLPop(keys []string, timeout float64) ([]string, error)
+
+	BRPop(keys []string, timeout float64) ([]string, error)
+
+	RPushX(key string, elements []string) (int64, error)
+
+	LPushX(key string, elements []string) (int64, error)
 }
