@@ -17,7 +17,7 @@ type StringCommands interface {
 	//	result := client.Set("key", "value")
 	//
 	// [redis.io]: https://redis.io/commands/set/
-	Set(key string, value string) <-chan StringResponse
+	Set(key string, value string) (string, error)
 
 	// SetWithOptions sets the given key with the given value using the given options. The return value is dependent on the
 	// passed options. If the value is successfully set, "OK" is returned. If value isn't set because of [OnlyIfExists] or

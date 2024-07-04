@@ -38,16 +38,11 @@ func handleRedisResponse[T redisResponse](t reflect.Type, isNilable bool, respon
 	}
 }
 
-func convertCharArrayToString(arr *C.char, len C.long) string {
-	var res string = ""
-	for _, v := range unsafe.Slice(arr, len) {
-		if v == 0 {
-			res = res + " "
-		} else {
-			res = res + string(v)
-		}
-	}
-	return res
+func convertCharArrayToString(arr *C.char, length C.long) string {
+	byteSlice := C.GoBytes(unsafe.Pointer(arr), C.int(int64(length)))
+	// Create Go string from byte slice (preserving null characters)
+	goStr := string(byteSlice)
+	return goStr
 }
 
 func handleStringResponse(response *C.struct_CommandResponse) (string, error) {

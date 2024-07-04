@@ -34,11 +34,6 @@ type payload struct {
 	error error
 }
 
-type StringResponse struct {
-	result string
-	error  error
-}
-
 //export successCallback
 func successCallback(channelPtr unsafe.Pointer, cResponse *C.struct_CommandResponse) {
 	// TODO: call lib.rs function to free response
@@ -134,21 +129,13 @@ func freeCStrings(cArgs []*C.char) {
 	}
 }
 
-func (client *baseClient) Set(key string, value string) <-chan StringResponse {
-	r := make(chan StringResponse)
+func (client *baseClient) Set(key string, value string) (string, error) {
+	result, err := client.executeCommand(C.SetString, []string{key, value})
+	if err != nil {
+		return "", err
+	}
 
-	go func() {
-		defer close(r)
-		res, err := client.executeCommand(C.SetString, []string{key, value})
-		if err != nil {
-			r <- StringResponse{result: "", error: err}
-		} else {
-			str, err := handleStringResponse(res)
-			r <- StringResponse{result: str, error: err}
-		}
-	}()
-
-	return r
+	return handleStringResponse(result)
 }
 
 // SetWithOptions sets the given key with the given value using the given options. The return value is dependent on the passed

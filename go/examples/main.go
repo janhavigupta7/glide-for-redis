@@ -27,7 +27,7 @@ func main() {
 	}
 	fmt.Println("PING:", res)
 
-	res = <-client.Set("apples", "oranges")
+	res, err = client.Set("apples", "oranges")
 	if err != nil {
 		log.Fatal("Glide example failed with an error: ", err)
 	}
