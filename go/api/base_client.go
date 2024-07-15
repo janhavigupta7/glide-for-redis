@@ -106,7 +106,7 @@ func (client *baseClient) executeCommand(requestType C.RequestType, args []strin
 	resultChannel := make(chan payload)
 	resultChannelPtr := uintptr(unsafe.Pointer(&resultChannel))
 
-	C.command(client.coreClient, C.uintptr_t(resultChannelPtr), requestType, C.uintptr_t(len(args)), &cArgs[0])
+	C.command(client.coreClient, C.uintptr_t(resultChannelPtr), uint32(requestType), C.uintptr_t(len(args)), &cArgs[0])
 	payload := <-resultChannel
 	if payload.error != nil {
 		return nil, payload.error
@@ -130,7 +130,7 @@ func freeCStrings(cArgs []*C.char) {
 }
 
 func (client *baseClient) Set(key string, value string) (string, error) {
-	result, err := client.executeCommand(C.SetString, []string{key, value})
+	result, err := client.executeCommand(C.Set, []string{key, value})
 	if err != nil {
 		return "", err
 	}
@@ -138,44 +138,17 @@ func (client *baseClient) Set(key string, value string) (string, error) {
 	return handleStringResponse(result)
 }
 
-// SetWithOptions sets the given key with the given value using the given options. The return value is dependent on the passed
-// options. If the value is successfully set, "OK" is returned. If value isn't set because of [OnlyIfExists] or
-// [OnlyIfDoesNotExist] conditions, an zero-value string is returned (""). If [api.SetOptions.ReturnOldValue] is set, the old
-// value is returned.
-//
-// See [redis.io] for details.
-//
-// For example:
-//
-//	result, err := client.SetWithOptions("key", "value", &api.SetOptions{
-//	    ConditionalSet: api.OnlyIfExists,
-//	    Expiry: &api.Expiry{
-//	        Type: api.Seconds,
-//	        Count: uint64(5),
-//	    },
-//	})
-//
-// [redis.io]: https://redis.io/commands/set/
 func (client *baseClient) SetWithOptions(key string, value string, options *SetOptions) (string, error) {
-	result, err := client.executeCommand(C.SetString, append([]string{key, value}, options.toArgs()...))
+	result, err := client.executeCommand(C.Set, append([]string{key, value}, options.toArgs()...))
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 
-	return handleStringResponse(result)
+	return handleStringOrNullResponse(result)
 }
 
-// Get a pointer to the value associated with the given key, or nil if no such value exists.
-//
-// See [redis.io] for details.
-//
-// For example:
-//
-//	result := client.Set("key", "value")
-//
-// [redis.io]: https://redis.io/commands/set/
 func (client *baseClient) Get(key string) (string, error) {
-	result, err := client.executeCommand(C.GetString, []string{key})
+	result, err := client.executeCommand(C.Get, []string{key})
 	if err != nil {
 		return "", err
 	}
@@ -203,8 +176,7 @@ func (client *baseClient) Exists(keys []string) (int64, error) {
 func (client *baseClient) MSet(keyValueMap map[string]string) (string, error) {
 	flat := []string{}
 	for key, value := range keyValueMap {
-		flat = append(flat, key)
-		flat = append(flat, value)
+		flat = append(flat, key, value)
 	}
 	result, err := client.executeCommand(C.MSet, flat)
 	if err != nil {
@@ -212,6 +184,18 @@ func (client *baseClient) MSet(keyValueMap map[string]string) (string, error) {
 	}
 
 	return handleStringResponse(result)
+}
+
+func (client *baseClient) MSetNX(keyValueMap map[string]string) (int64, error) {
+	flat := []string{}
+	for key, value := range keyValueMap {
+		flat = append(flat, key, value)
+	}
+	result, err := client.executeCommand(C.MSetNX, flat)
+	if err != nil {
+		return 0, err
+	}
+	return handleLongResponse(result)
 }
 
 func (client *baseClient) MGet(keys []string) ([]string, error) {
@@ -228,7 +212,6 @@ func (client *baseClient) Incr(key string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-
 	return handleLongResponse(result)
 }
 
@@ -295,8 +278,8 @@ func (client *baseClient) GetRange(key string, start int, end int) (string, erro
 	return handleStringResponse(result)
 }
 
-func (client *baseClient) LPush(key string, elements []string) (int64, error) {
-	result, err := client.executeCommand(C.LPush, append([]string{key}, elements...))
+func (client *baseClient) Append(key string, value string) (int64, error) {
+	result, err := client.executeCommand(C.Append, []string{key, value})
 	if err != nil {
 		return 0, err
 	}
@@ -304,116 +287,11 @@ func (client *baseClient) LPush(key string, elements []string) (int64, error) {
 	return handleLongResponse(result)
 }
 
-func (client *baseClient) LPop(key string) (string, error) {
-	result, err := client.executeCommand(C.LPop, []string{key})
-	if err != nil {
-		return "", err
-	}
-
-	return handleStringOrNullResponse(result)
-}
-
-func (client *baseClient) LRange(key string, start int64, end int64) ([]string, error) {
-	result, err := client.executeCommand(C.LRange, []string{key, strconv.FormatInt(start, 10), strconv.FormatInt(end, 10)})
-	if err != nil {
-		return []string{}, err
-	}
-
-	return handleStringArrayOrNullResponse(result)
-}
-
-func (client *baseClient) Lindex(key string, index int64) (string, error) {
-	result, err := client.executeCommand(C.Lindex, []string{key, strconv.FormatInt(index, 10)})
-	if err != nil {
-		return "", err
-	}
-
-	return handleStringOrNullResponse(result)
-}
-
-func (client *baseClient) LTrim(key string, start int64, end int64) (string, error) {
-	result, err := client.executeCommand(C.LTrim, []string{key, strconv.FormatInt(start, 10), strconv.FormatInt(end, 10)})
+func (client *baseClient) LCS(key1 string, key2 string) (string, error) {
+	result, err := client.executeCommand(C.LCS, []string{key1, key2})
 	if err != nil {
 		return "", err
 	}
 
 	return handleStringResponse(result)
-}
-
-func (client *baseClient) LLen(key string) (int64, error) {
-	result, err := client.executeCommand(C.LLen, []string{key})
-	if err != nil {
-		return 0, err
-	}
-
-	return handleLongResponse(result)
-}
-
-func (client *baseClient) LRem(key string, count int64, element string) (int64, error) {
-	result, err := client.executeCommand(C.LRem, []string{key, strconv.FormatInt(count, 10), element})
-	if err != nil {
-		return 0, err
-	}
-
-	return handleLongResponse(result)
-}
-
-func (client *baseClient) RPush(key string, elements []string) (int64, error) {
-	result, err := client.executeCommand(C.RPush, append([]string{key}, elements...))
-	if err != nil {
-		return 0, err
-	}
-
-	return handleLongResponse(result)
-}
-
-func (client *baseClient) RPop(key string) (string, error) {
-	result, err := client.executeCommand(C.RPop, []string{key})
-	if err != nil {
-		return "", err
-	}
-
-	return handleStringOrNullResponse(result)
-}
-
-func (client *baseClient) BLPop(keys []string, timeout float64) ([]string, error) {
-	var arg []string
-	arg = append(arg, keys...)
-	arg = append(arg, strconv.FormatFloat(timeout, 'f', -1, 64))
-	result, err := client.executeCommand(C.BLPop, arg)
-	if err != nil {
-		return []string{}, err
-	}
-
-	return handleStringArrayOrNullResponse(result)
-}
-
-func (client *baseClient) BRPop(keys []string, timeout float64) ([]string, error) {
-	var arg []string
-	arg = append(arg, keys...)
-	arg = append(arg, strconv.FormatFloat(timeout, 'f', -1, 64))
-	result, err := client.executeCommand(C.BRPop, arg)
-	if err != nil {
-		return []string{}, err
-	}
-
-	return handleStringArrayOrNullResponse(result)
-}
-
-func (client *baseClient) RPushX(key string, elements []string) (int64, error) {
-	result, err := client.executeCommand(C.RPushX, append([]string{key}, elements...))
-	if err != nil {
-		return 0, err
-	}
-
-	return handleLongResponse(result)
-}
-
-func (client *baseClient) LPushX(key string, elements []string) (int64, error) {
-	result, err := client.executeCommand(C.LPushX, append([]string{key}, elements...))
-	if err != nil {
-		return 0, err
-	}
-
-	return handleLongResponse(result)
 }

@@ -34,6 +34,12 @@ func NewRedisClient(config *RedisClientConfiguration) (*RedisClient, error) {
 // For example, to return a list of all pub/sub clients:
 //
 //	client.CustomCommand([]string{"CLIENT", "LIST","TYPE", "PUBSUB"})
+//
+// TODO: only supports string return type as of now.
 func (client *RedisClient) CustomCommand(args []string) (interface{}, error) {
-	return client.executeCommand(C.CustomCommand, args)
+	res, err := client.executeCommand(C.CustomCommand, args)
+	if err != nil {
+		return nil, err
+	}
+	return handleStringOrNullResponse(res)
 }

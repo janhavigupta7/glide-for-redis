@@ -17,11 +17,7 @@ type redisResponse interface {
 	interface{} | string | types.Nil
 }
 
-func handleRedisResponse[T redisResponse](t reflect.Type, isNilable bool, response interface{}) (T, error) {
-	if isNilable && response == nil {
-		return reflect.ValueOf(nil).Interface().(T), nil
-	}
-
+func handleRedisResponse[T redisResponse](t reflect.Type, response interface{}) (T, error) {
 	if reflect.TypeOf(response) == t {
 		return reflect.ValueOf(response).Interface().(T), nil
 	}
@@ -47,65 +43,52 @@ func convertCharArrayToString(arr *C.char, length C.long) string {
 
 func handleStringResponse(response *C.struct_CommandResponse) (string, error) {
 	defer C.free_command_response(response)
-	var res string = convertCharArrayToString(response.string_value, response.int_value)
-	return handleRedisResponse[string](reflect.TypeOf(""), false, res)
+	var res string = convertCharArrayToString(response.string_value, response.string_value_len)
+	return handleRedisResponse[string](reflect.TypeOf(""), res)
 }
 
 func handleStringOrNullResponse(response *C.struct_CommandResponse) (string, error) {
-	if response != nil {
-		defer C.free_command_response(response)
+	if response == nil {
+		return "", nil
 	}
-	var res string = ""
-	if response != nil {
-		res = convertCharArrayToString(response.string_value, response.int_value)
-	}
-	return handleRedisResponse[string](reflect.TypeOf(""), false, res)
+	return handleStringResponse(response)
 }
 
 func handleStringArrayResponse(response *C.struct_CommandResponse) ([]string, error) {
 	defer C.free_command_response(response)
 	var len []C.long
-	len = append(len, unsafe.Slice(response.int_array_value, response.int_value)...)
+	len = append(len, unsafe.Slice(response.array_elements_len, response.array_value_len)...)
 	var slice []string
-	for k, v := range unsafe.Slice(response.array_value, response.int_value) {
+	for k, v := range unsafe.Slice(response.array_value, response.array_value_len) {
 		if v == nil {
 			slice = append(slice, "")
 		} else {
-			var res string = convertCharArrayToString(v, len[k])
-			slice = append(slice, res)
+			slice = append(slice, convertCharArrayToString(v, len[k]))
 		}
 	}
-	return handleRedisResponse[[]string](reflect.TypeOf([]string{}), false, slice)
+	return handleRedisResponse[[]string](reflect.TypeOf([]string{}), slice)
 }
 
 func handleStringArrayOrNullResponse(response *C.struct_CommandResponse) ([]string, error) {
-	if response != nil {
-		defer C.free_command_response(response)
+	if response == nil {
+		return []string{}, nil
 	}
-	var slice []string
-	if response != nil {
-		var len []C.long
-		len = append(len, unsafe.Slice(response.int_array_value, response.int_value)...)
-		for k, v := range unsafe.Slice(response.array_value, response.int_value) {
-			if v == nil {
-				slice = append(slice, "")
-			} else {
-				var res string = convertCharArrayToString(v, len[k])
-				slice = append(slice, res)
-			}
-		}
-	}
-	return handleRedisResponse[[]string](reflect.TypeOf([]string{}), false, slice)
+	return handleStringArrayResponse(response)
 }
 
 func handleLongResponse(response *C.struct_CommandResponse) (int64, error) {
 	defer C.free_command_response(response)
 	var i int64
-	return handleRedisResponse[int64](reflect.TypeOf(i), false, int64(response.int_value))
+	return handleRedisResponse[int64](reflect.TypeOf(i), int64(response.int_value))
 }
 
 func handleDoubleResponse(response *C.struct_CommandResponse) (float64, error) {
 	defer C.free_command_response(response)
 	var i float64
-	return handleRedisResponse[float64](reflect.TypeOf(i), false, float64(response.float_value))
+	return handleRedisResponse[float64](reflect.TypeOf(i), float64(response.float_value))
+}
+
+func handleBooleanResponse(response *C.struct_CommandResponse) (bool, error) {
+	defer C.free_command_response(response)
+	return handleRedisResponse[bool](reflect.TypeOf(false), bool(response.bool_value))
 }
