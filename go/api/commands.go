@@ -77,6 +77,70 @@ type StringCommands interface {
 	// [valkey.io]: https://valkey.io/commands/get/
 	Get(key string) (string, error)
 
+	// Gets a string value associated with the given key and deletes the key.
+	//
+	// See [valkey.io] for details.
+	//
+	// Parameters:
+	//  key - The key to be retrieved from the database.
+	//
+	// Return value:
+	//  If key exists, returns the value of key as a String. Otherwise, return ("").
+	//
+	// For example:
+	//  key: value
+	//	result, err := client.GetDel("key")
+	//  result: "value"
+	//  result, err := client.GetDel("key")
+	//  result: ""
+	//
+	// [valkey.io]: https://valkey.io/commands/getdel/
+	GetDel(key string) (string, error)
+
+	// Get string value associated with the given key, or an empty string is returned ("") if no such value exists.
+	//
+	// See [valkey.io] for details.
+	//
+	// Parameters:
+	//  key - The key to be retrieved from the database.
+	//
+	// Return value:
+	//  If key exists, returns the value of key as a String. Otherwise, return ("").
+	//
+	// For example:
+	//  1. key: value
+	//	   result, err := client.Get("key")
+	//     result: "value"
+	//  2. result, err := client.Get("nonExistentKey")
+	//     result: ""
+	//
+	// [valkey.io]: https://valkey.io/commands/getex/
+	GetEx(key string) (string, error)
+
+	// Get string value associated with the given key and optionally sets the expiration of the key.
+	//
+	// See [valkey.io] for details.
+	//
+	// Parameters:
+	//  key - The key to be retrieved from the database.
+	//  options - The GetEx options.
+	//
+	// Return value:
+	//  If key exists, returns the value of key as a String. Otherwise, return ("").
+	//
+	// For example:
+	//  key: initialValue
+	//  result, err := client.GetExWithOptions("key", &api.GetExOptions{
+	//      Expiry: &api.Expiry{
+	//          Type: api.Seconds,
+	//          Count: uint64(5),
+	//      },
+	//  })
+	//  result: "OK"
+	//
+	// [valkey.io]: https://valkey.io/commands/getex/
+	GetExWithOptions(key string, options *GetExOptions) (string, error)
+
 	// Sets multiple keys to multiple values in a single operation.
 	//
 	// Note:
@@ -350,4 +414,230 @@ type StringCommands interface {
 	//
 	// [valkey.io]: https://valkey.io/commands/lcs/
 	LCS(key1 string, key2 string) (string, error)
+
+	// Returns the length of the longest common subsequence between strings stored at key1 and key2.
+	//
+	// Since:
+	//  Valkey 7.0 and above.
+	//
+	// Note:
+	//  When in cluster mode, key1 and key2 must map to the same hash slot.
+	//
+	// See [valkey.io] for details.
+	//
+	// Parameters:
+	//  key1 - The key that stores the first string.
+	//  key2 - The key that stores the second string.
+	//
+	// Return value:
+	//  A String containing the longest common subsequence between the 2 strings.
+	//  An empty String is returned if the keys do not exist or have no common subsequences.
+	//
+	// For example:
+	//  testKey1: foo, testKey2: fao
+	//  result, err := client.LCS("testKey1", "testKey2");
+	//  result: 2
+	//
+	// [valkey.io]: https://valkey.io/commands/lcs/
+	// LCSLen(key1 string, key2 string) (int64, error)
 }
+
+// public interface StringBaseCommands {
+
+//     /** Valkey API keyword used to indicate that the length of the lcs should be returned. */
+//     public static final String LEN_VALKEY_API = "LEN";
+
+//     /** <code>IDX</code> option string to include in the <code>LCS</code> command. */
+//     public static final String IDX_COMMAND_STRING = "IDX";
+
+//     /** <code>MINMATCHLEN</code> option string to include in the <code>LCS</code> command. */
+//     public static final String MINMATCHLEN_COMMAND_STRING = "MINMATCHLEN";
+
+//     /** <code>WITHMATCHLEN</code> option string to include in the <code>LCS</code> command. */
+//     public static final String WITHMATCHLEN_COMMAND_STRING = "WITHMATCHLEN";
+
+//     /** Key for LCS matches result. */
+//     public static final String LCS_MATCHES_RESULT_KEY = "matches";
+
+//     /**
+//      * Returns the indices and the total length of all the longest common subsequences between strings
+//      * stored at <code>key1</code> and <code>key2</code>.
+//      *
+//      * @since Valkey 7.0 and above.
+//      * @apiNote When in cluster mode, <code>key1</code> and <code>key2</code> must map to the same
+//      *     hash slot.
+//      * @see <a href="https://valkey.io/commands/lcs/">valkey.io</a> for details.
+//      * @param key1 The key that stores the first string.
+//      * @param key2 The key that stores the second string.
+//      * @return A <code>Map</code> containing the indices of the longest common subsequence between the
+//      *     2 strings and the total length of all the longest common subsequences. The resulting map
+//      *     contains two keys, "matches" and "len":
+//      *     <ul>
+//      *       <li>"len" is mapped to the total length of the all longest common subsequences between
+//      *           the 2 strings stored as <code>Long</code>.
+//      *       <li>"matches" is mapped to a three dimensional <code>Long</code> array that stores pairs
+//      *           of indices that represent the location of the common subsequences in the strings held
+//      *           by <code>key1</code> and <code>key2</code>.
+//      *     </ul>
+//      *     See example for more details.
+//      * @example
+//      *     <pre>{@code
+//      * client.mset(Map.of("key1", "abcd123", "key2", "bcdef123")).get();
+//      * Map<String, Object> response = client.lcsIdx("key1", "key2").get();
+//      * // the response contains data in the following format:
+//      * Map<String, Object> data = Map.of(
+//      *     "matches", new Long[][][] {
+//      *         {                         // the first substring match is `"123"`
+//      *             {4L, 6L},             // in `"key1"` it is located between indices `4` and `6`
+//      *             {5L, 7L}              // and in `"key2"` - in between `5` and `7`
+//      *         },
+//      *         {                         // second substring match is `"bcd"`
+//      *             {1L, 3L},             // in `"key1"` it is located between indices `1` and `3`
+//      *             {0L, 2L}              // and in `"key2"` - in between `0` and `2`
+//      *         }
+//      *     },
+//      *     "len", 6                      // total length of the all matches found
+//      * );
+//      * }</pre>
+//      */
+//     CompletableFuture<Map<String, Object>> lcsIdx(String key1, String key2);
+
+//     /**
+//      * Returns the indices and the total length of all the longest common subsequences between strings
+//      * stored at <code>key1</code> and <code>key2</code>.
+//      *
+//      * @since Valkey 7.0 and above.
+//      * @apiNote When in cluster mode, <code>key1</code> and <code>key2</code> must map to the same
+//      *     hash slot.
+//      * @see <a href="https://valkey.io/commands/lcs/">valkey.io</a> for details.
+//      * @param key1 The key that stores the first string.
+//      * @param key2 The key that stores the second string.
+//      * @param minMatchLen The minimum length of matches to include in the result.
+//      * @return A <code>Map</code> containing the indices of the longest common subsequence between the
+//      *     2 strings and the total length of all the longest common subsequences. The resulting map
+//      *     contains two keys, "matches" and "len":
+//      *     <ul>
+//      *       <li>"len" is mapped to the total length of the all longest common subsequences between
+//      *           the 2 strings stored as <code>Long</code>. This value doesn't count towards the
+//      *           <code>minMatchLen</code> filter.
+//      *       <li>"matches" is mapped to a three dimensional <code>Long</code> array that stores pairs
+//      *           of indices that represent the location of the common subsequences in the strings held
+//      *           by <code>key1</code> and <code>key2</code>.
+//      *     </ul>
+//      *     See example for more details.
+//      * @example
+//      *     <pre>{@code
+//      * client.mset(Map.of("key1", "abcd123", "key2", "bcdef123")).get();
+//      * Map<String, Object> response = client.lcsIdx("key1", "key2", 2).get();
+//      * // the response contains data in the following format:
+//      * Map<String, Object> data = Map.of(
+//      *     "matches", new Long[][][] {
+//      *         {                         // the first substring match is `"123"`
+//      *             {4L, 6L},             // in `"key1"` it is located between indices `4` and `6`
+//      *             {5L, 7L}              // and in `"key2"` - in between `5` and `7`
+//      *         },
+//      *         {                         // second substring match is `"bcd"`
+//      *             {1L, 3L},             // in `"key1"` it is located between indices `1` and `3`
+//      *             {0L, 2L}              // and in `"key2"` - in between `0` and `2`
+//      *         }
+//      *     },
+//      *     "len", 6                      // total length of the all matches found
+//      * );
+//      * }</pre>
+//      */
+//     CompletableFuture<Map<String, Object>> lcsIdx(String key1, String key2, long minMatchLen);
+
+//     /**
+//      * Returns the indices and lengths of the longest common subsequences between strings stored at
+//      * <code>key1</code> and <code>key2</code>.
+//      *
+//      * @since Valkey 7.0 and above.
+//      * @apiNote When in cluster mode, <code>key1</code> and <code>key2</code> must map to the same
+//      *     hash slot.
+//      * @see <a href="https://valkey.io/commands/lcs/">valkey.io</a> for details.
+//      * @param key1 The key that stores the first string.
+//      * @param key2 The key that stores the second string.
+//      * @return A <code>Map</code> containing the indices of the longest common subsequence between the
+//      *     2 strings and the lengths of the longest common subsequences. The resulting map contains
+//      *     two keys, "matches" and "len":
+//      *     <ul>
+//      *       <li>"len" is mapped to the total length of the all longest common subsequences between
+//      *           the 2 strings stored as <code>Long</code>.
+//      *       <li>"matches" is mapped to a three dimensional array that stores pairs of indices that
+//      *           represent the location of the common subsequences in the strings held by <code>key1
+//      *           </code> and <code>key2</code> and the match length.
+//      *     </ul>
+//      *     See example for more details.
+//      * @example
+//      *     <pre>{@code
+//      * client.mset(Map.of("key1", "abcd1234", "key2", "bcdef1234")).get();
+//      * Map<String, Object> response = client.lcsIdxWithMatchLen("key1", "key2").get();
+//      * // the response contains data in the following format:
+//      * Map<String, Object> data = Map.of(
+//      *     "matches", new Object[][] {
+//      *         {                                    // the first substring match is `"1234"`
+//      *             new Long[] {4L, 7L},             // in `"key1"` it is located between indices `4` and `7`
+//      *             new Long[] {5L, 8L},             // and in `"key2"` - in between `5` and `8`
+//      *             4L                               // the match length
+//      *         },
+//      *         {                                    // second substring match is `"bcd"`
+//      *             new Long[] {1L, 3L},             // in `"key1"` it is located between indices `1` and `3`
+//      *             new Long[] {0L, 2L},             // and in `"key2"` - in between `0` and `2`
+//      *             3L                               // the match length
+//      *         }
+//      *     },
+//      *     "len", 6                                 // total length of the all matches found
+//      * );
+//      * }</pre>
+//      */
+//     CompletableFuture<Map<String, Object>> lcsIdxWithMatchLen(String key1, String key2);
+
+//     /**
+//      * Returns the indices and lengths of the longest common subsequences between strings stored at
+//      * <code>key1</code> and <code>key2</code>.
+//      *
+//      * @since Valkey 7.0 and above.
+//      * @apiNote When in cluster mode, <code>key1</code> and <code>key2</code> must map to the same
+//      *     hash slot.
+//      * @see <a href="https://valkey.io/commands/lcs/">valkey.io</a> for details.
+//      * @param key1 The key that stores the first string.
+//      * @param key2 The key that stores the second string.
+//      * @param minMatchLen The minimum length of matches to include in the result.
+//      * @return A <code>Map</code> containing the indices of the longest common subsequence between the
+//      *     2 strings and the total length of all the longest common subsequences. The resulting map
+//      *     contains two keys, "matches" and "len":
+//      *     <ul>
+//      *       <li>"len" is mapped to the total length of the all longest common subsequences between
+//      *           the 2 strings stored as <code>Long</code>. This value doesn't count towards the
+//      *           <code>minMatchLen</code> filter.
+//      *       <li>"matches" is mapped to a three dimensional array that stores pairs of indices that
+//      *           represent the location of the common subsequences in the strings held by <code>key1
+//      *           </code> and <code>key2</code> and the match length.
+//      *     </ul>
+//      *     See example for more details.
+//      * @example
+//      *     <pre>{@code
+//      * client.mset(Map.of("key1", "abcd1234", "key2", "bcdef1234")).get();
+//      * Map<String, Object> response = client.lcsIdxWithMatchLen("key1", "key2", 2).get();
+//      * // the response contains data in the following format:
+//      * Map<String, Object> data = Map.of(
+//      *     "matches", new Object[][] {
+//      *         {                                    // the first substring match is `"1234"`
+//      *             new Long[] {4L, 7L},             // in `"key1"` it is located between indices `4` and `7`
+//      *             new Long[] {5L, 8L},             // and in `"key2"` - in between `5` and `8`
+//      *             4L                               // the match length
+//      *         },
+//      *         {                                    // second substring match is `"bcd"`
+//      *             new Long[] {1L, 3L},             // in `"key1"` it is located between indices `1` and `3`
+//      *             new Long[] {0L, 2L},             // and in `"key2"` - in between `0` and `2`
+//      *             3L                               // the match length
+//      *         }
+//      *     },
+//      *     "len", 6                                 // total length of the all matches found
+//      * );
+//      * }</pre>
+//      */
+//     CompletableFuture<Map<String, Object>> lcsIdxWithMatchLen(
+//             String key1, String key2, long minMatchLen);
+
+// }

@@ -47,10 +47,14 @@ pub struct CommandResponse {
     // `array_elements_len` represents the length of each array element.
     // `array_value_len` represents the length of the array.
     #[derivative(Default(value = "std::ptr::null_mut()"))]
-    array_value: *mut *mut c_char,
+    array_value: *mut *mut CommandResponse,
+    // array_value: *mut *mut c_char,
     #[derivative(Default(value = "std::ptr::null_mut()"))]
     array_elements_len: *mut c_long,
     array_value_len: c_long,
+
+    // #[derivative(Default(value = "std::ptr::null_mut()"))]
+    // nested_response: *mut CommandResponse,
 }
 
 /// Success callback that is called when a command succeeds.
@@ -306,6 +310,90 @@ fn convert_vec_to_pointer<T>(mut vec: Vec<T>) -> (*mut T, c_long) {
     (vec_ptr, len)
 }
 
+fn redis_value_to_command_response(value: Value) -> *mut CommandResponse {
+    let mut command_response = CommandResponse::default();
+    let result: RedisResult<Option<CommandResponse>> = match value {
+        Value::Nil => Ok(None),
+        Value::SimpleString(text) => {
+            let vec = text.chars().map(|b| b as c_char).collect::<Vec<_>>();
+            let (vec_ptr, len) = convert_vec_to_pointer(vec);
+            command_response.string_value = vec_ptr;
+            command_response.string_value_len = len;
+            Ok(Some(command_response))
+        }
+        Value::BulkString(text) => {
+            let vec = text.iter().map(|b| *b as c_char).collect::<Vec<_>>();
+            let (vec_ptr, len) = convert_vec_to_pointer(vec);
+            command_response.string_value = vec_ptr;
+            command_response.string_value_len = len;
+            Ok(Some(command_response))
+        }
+        Value::VerbatimString { format: _, text } => {
+            let vec = text.chars().map(|b| b as c_char).collect::<Vec<_>>();
+            let (vec_ptr, len) = convert_vec_to_pointer(vec);
+            command_response.string_value = vec_ptr;
+            command_response.string_value_len = len;
+            Ok(Some(command_response))
+        }
+        Value::Okay => {
+            let vec = "OK".chars().map(|b| b as c_char).collect::<Vec<_>>();
+            let (vec_ptr, len) = convert_vec_to_pointer(vec);
+            command_response.string_value = vec_ptr;
+            command_response.string_value_len = len;
+            Ok(Some(command_response))
+        }
+        Value::Int(num) => {
+            command_response.int_value = num;
+            Ok(Some(command_response))
+        }
+        Value::Double(num) => {
+            command_response.float_value = num;
+            Ok(Some(command_response))
+        }
+        Value::Boolean(boolean) => {
+            command_response.bool_value = boolean;
+            Ok(Some(command_response))
+        }
+        Value::Array(array) => {
+            let len = array.len();
+            // let mut vec_elements_len: Vec<c_long> = Vec::<c_long>::with_capacity(len);
+            let vec = array
+                .iter()
+                .map(|value| {
+                    redis_value_to_command_response(value.clone())
+                })
+                .collect::<Vec<_>>();
+            let (vec_ptr, len) = convert_vec_to_pointer(vec);
+            // let (vec_elements_len_ptr, _) = convert_vec_to_pointer(vec_elements_len);
+            command_response.array_value = vec_ptr;
+            command_response.array_value_len = len;
+            // command_response.array_elements_len = vec_elements_len_ptr;
+            Ok(Some(command_response))
+        }
+        // TODO: Add support for other return types.
+        _ => todo!(),
+    };
+    // result.unwrap();
+    (unsafe {
+        match result {
+            Ok(None) => std::ptr::null_mut(),
+            Ok(Some(message)) => {
+                Box::into_raw(Box::new(message))
+            }
+            Err(err) => {
+                std::ptr::null_mut()
+            //     let message = errors::error_message(&err);
+            //     let error_type = errors::error_type(&err);
+
+            //     let c_err_str = CString::into_raw(
+            //         CString::new(message).expect("Couldn't convert error message to CString"),
+            //     );
+            //     (client_adapter.failure_callback)(channel, c_err_str, error_type);
+            }
+        }
+    })
+}
+
 // TODO: Finish documentation
 /// Executes a command.
 ///
@@ -358,96 +446,10 @@ pub unsafe extern "C" fn command(
             }
         };
 
-        let mut command_response = CommandResponse::default();
-        let result: RedisResult<Option<CommandResponse>> = match value {
-            Value::Nil => Ok(None),
-            Value::SimpleString(text) => {
-                let vec = text.chars().map(|b| b as c_char).collect::<Vec<_>>();
-                let (vec_ptr, len) = convert_vec_to_pointer(vec);
-                command_response.string_value = vec_ptr;
-                command_response.string_value_len = len;
-                Ok(Some(command_response))
-            }
-            Value::BulkString(text) => {
-                let vec = text.iter().map(|b| *b as c_char).collect::<Vec<_>>();
-                let (vec_ptr, len) = convert_vec_to_pointer(vec);
-                command_response.string_value = vec_ptr;
-                command_response.string_value_len = len;
-                Ok(Some(command_response))
-            }
-            Value::VerbatimString { format: _, text } => {
-                let vec = text.chars().map(|b| b as c_char).collect::<Vec<_>>();
-                let (vec_ptr, len) = convert_vec_to_pointer(vec);
-                command_response.string_value = vec_ptr;
-                command_response.string_value_len = len;
-                Ok(Some(command_response))
-            }
-            Value::Okay => {
-                let vec = "OK".chars().map(|b| b as c_char).collect::<Vec<_>>();
-                let (vec_ptr, len) = convert_vec_to_pointer(vec);
-                command_response.string_value = vec_ptr;
-                command_response.string_value_len = len;
-                Ok(Some(command_response))
-            }
-            Value::Int(num) => {
-                command_response.int_value = num;
-                Ok(Some(command_response))
-            }
-            Value::Double(num) => {
-                command_response.float_value = num;
-                Ok(Some(command_response))
-            }
-            Value::Boolean(boolean) => {
-                command_response.bool_value = boolean;
-                Ok(Some(command_response))
-            }
-            Value::Array(array) => {
-                let len = array.len();
-                let mut vec_elements_len: Vec<c_long> = Vec::<c_long>::with_capacity(len);
-                let vec = array
-                    .iter()
-                    .map(|value| {
-                        if *value == Value::Nil {
-                            vec_elements_len.push(0);
-                            return std::ptr::null_mut();
-                        }
-                        let res = <String>::from_redis_value(value)
-                            .expect("Couldn't read string from RedisValue")
-                            .chars()
-                            .map(|b| b as c_char)
-                            .collect::<Vec<_>>();
-                        let (res_ptr, res_len) = convert_vec_to_pointer(res);
-                        vec_elements_len.push(res_len);
-                        res_ptr
-                    })
-                    .collect::<Vec<_>>();
-                let (vec_ptr, len) = convert_vec_to_pointer(vec);
-                let (vec_elements_len_ptr, _) = convert_vec_to_pointer(vec_elements_len);
-                command_response.array_value = vec_ptr;
-                command_response.array_value_len = len;
-                command_response.array_elements_len = vec_elements_len_ptr;
-                Ok(Some(command_response))
-            }
-            // TODO: Add support for other return types.
-            _ => todo!(),
-        };
+        let result: *mut CommandResponse = redis_value_to_command_response(value);
 
         unsafe {
-            match result {
-                Ok(None) => (client_adapter.success_callback)(channel, std::ptr::null()),
-                Ok(Some(message)) => {
-                    (client_adapter.success_callback)(channel, Box::into_raw(Box::new(message)))
-                }
-                Err(err) => {
-                    let message = errors::error_message(&err);
-                    let error_type = errors::error_type(&err);
-
-                    let c_err_str = CString::into_raw(
-                        CString::new(message).expect("Couldn't convert error message to CString"),
-                    );
-                    (client_adapter.failure_callback)(channel, c_err_str, error_type);
-                }
-            };
+            (client_adapter.success_callback)(channel, result)
         }
     });
 }

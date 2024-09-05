@@ -32,12 +32,12 @@ func handleStringOrNullResponse(response *C.struct_CommandResponse) string {
 }
 
 func handleStringArrayResponse(response *C.struct_CommandResponse) []string {
-	defer C.free_command_response(response)
-	var len []C.long
-	len = append(len, unsafe.Slice(response.array_elements_len, response.array_value_len)...)
+	// defer C.free_command_response(response)
+	// var len []C.long
+	// len = append(len, unsafe.Slice(response.array_elements_len, response.array_value_len)...)
 	var slice []string
-	for k, v := range unsafe.Slice(response.array_value, response.array_value_len) {
-		slice = append(slice, convertCharArrayToString(v, len[k]))
+	for _, v := range unsafe.Slice(response.array_value, response.array_value_len) {
+		slice = append(slice, handleStringOrNullResponse(v))
 	}
 	return slice
 }
